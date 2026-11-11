@@ -1,7 +1,7 @@
 {
-  "name": "lwl-bp",
+  "name": "wzry-bp",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "concurrently -n web,api -c cyan,magenta \"npm:dev:client\" \"npm:dev:server\"",
