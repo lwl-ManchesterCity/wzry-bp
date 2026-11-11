@@ -1,0 +1,944 @@
+{
+  "season": "KPL2026S3",
+  "seasonName": "2026KPL年度总决赛",
+  "seasonRange": "10月2日至11月14日",
+  "scope": "KPL 职业赛事",
+  "source": "KPL 官网 · 赛季排行",
+  "sourceUrl": "https://kpl.qq.com/",
+  "fetchedAt": "2026-11-08",
+  "totalHeroes": 133,
+  "pickedHeroes": 91,
+  "heroes": {
+    "105": {
+      "name": "廉颇",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 8,
+      "winRate": 62.5
+    },
+    "106": {
+      "name": "小乔",
+      "job": "法师",
+      "lane": "中路",
+      "games": 68,
+      "winRate": 45.6
+    },
+    "107": {
+      "name": "赵云",
+      "job": "战士",
+      "lane": "打野",
+      "games": 71,
+      "winRate": 53.5
+    },
+    "108": {
+      "name": "墨子",
+      "job": "法师",
+      "lane": "中路",
+      "games": 9,
+      "winRate": 55.6
+    },
+    "109": {
+      "name": "妲己",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "110": {
+      "name": "嬴政",
+      "job": "法师",
+      "lane": "中路",
+      "games": 14,
+      "winRate": 35.7
+    },
+    "111": {
+      "name": "孙尚香",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 0,
+      "winRate": null
+    },
+    "112": {
+      "name": "鲁班七号",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 2,
+      "winRate": 100
+    },
+    "113": {
+      "name": "庄周",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 3,
+      "winRate": 66.7
+    },
+    "114": {
+      "name": "刘禅",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 0,
+      "winRate": null
+    },
+    "115": {
+      "name": "高渐离",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "116": {
+      "name": "阿轲",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "117": {
+      "name": "钟无艳",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 6,
+      "winRate": 16.7
+    },
+    "118": {
+      "name": "孙膑",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 2,
+      "winRate": 50
+    },
+    "119": {
+      "name": "扁鹊",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "120": {
+      "name": "白起",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 15,
+      "winRate": 40
+    },
+    "121": {
+      "name": "芈月",
+      "job": "法师",
+      "lane": "对抗路",
+      "games": 7,
+      "winRate": 28.6
+    },
+    "123": {
+      "name": "吕布",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 3,
+      "winRate": 66.7
+    },
+    "124": {
+      "name": "周瑜",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "125": {
+      "name": "元歌",
+      "job": "刺客",
+      "lane": "对抗路",
+      "games": 2,
+      "winRate": 50
+    },
+    "126": {
+      "name": "夏侯惇",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 36,
+      "winRate": 55.6
+    },
+    "127": {
+      "name": "甄姬",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "128": {
+      "name": "曹操",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 75,
+      "winRate": 61.3
+    },
+    "129": {
+      "name": "典韦",
+      "job": "战士",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "130": {
+      "name": "宫本武藏",
+      "job": "战士",
+      "lane": "打野",
+      "games": 7,
+      "winRate": 42.9
+    },
+    "131": {
+      "name": "李白",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "132": {
+      "name": "马可波罗",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 0,
+      "winRate": null
+    },
+    "133": {
+      "name": "狄仁杰",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 8,
+      "winRate": 50
+    },
+    "134": {
+      "name": "达摩",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 7,
+      "winRate": 0
+    },
+    "135": {
+      "name": "项羽",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 33,
+      "winRate": 54.6
+    },
+    "136": {
+      "name": "武则天",
+      "job": "法师",
+      "lane": "中路",
+      "games": 46,
+      "winRate": 43.5
+    },
+    "137": {
+      "name": "司马懿",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "138": {
+      "name": "王维",
+      "job": "法师",
+      "lane": "中路",
+      "games": 25,
+      "winRate": 52
+    },
+    "139": {
+      "name": "老夫子",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 3,
+      "winRate": 66.7
+    },
+    "140": {
+      "name": "关羽",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 61,
+      "winRate": 54.1
+    },
+    "141": {
+      "name": "貂蝉",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "142": {
+      "name": "安琪拉",
+      "job": "法师",
+      "lane": "中路",
+      "games": 42,
+      "winRate": 42.9
+    },
+    "144": {
+      "name": "程咬金",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 0,
+      "winRate": null
+    },
+    "146": {
+      "name": "露娜",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "148": {
+      "name": "姜子牙",
+      "job": "法师",
+      "lane": "中路",
+      "games": 13,
+      "winRate": 53.9
+    },
+    "149": {
+      "name": "刘邦",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 0,
+      "winRate": null
+    },
+    "150": {
+      "name": "韩信",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "151": {
+      "name": "孙权",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 10,
+      "winRate": 60
+    },
+    "152": {
+      "name": "王昭君",
+      "job": "法师",
+      "lane": "中路",
+      "games": 4,
+      "winRate": 50
+    },
+    "153": {
+      "name": "兰陵王",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "154": {
+      "name": "花木兰",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 0,
+      "winRate": null
+    },
+    "155": {
+      "name": "艾琳",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 51,
+      "winRate": 54.9
+    },
+    "156": {
+      "name": "张良",
+      "job": "法师",
+      "lane": "中路",
+      "games": 8,
+      "winRate": 37.5
+    },
+    "157": {
+      "name": "不知火舞",
+      "job": "刺客",
+      "lane": "中路",
+      "games": 38,
+      "winRate": 44.7
+    },
+    "159": {
+      "name": "朵莉亚",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 10,
+      "winRate": 50
+    },
+    "162": {
+      "name": "娜可露露",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 6,
+      "winRate": 50
+    },
+    "163": {
+      "name": "橘右京",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 31,
+      "winRate": 38.7
+    },
+    "166": {
+      "name": "亚瑟",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 0,
+      "winRate": null
+    },
+    "167": {
+      "name": "孙悟空",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "168": {
+      "name": "牛魔",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 7,
+      "winRate": 42.9
+    },
+    "169": {
+      "name": "后羿",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 8,
+      "winRate": 50
+    },
+    "170": {
+      "name": "刘备",
+      "job": "战士",
+      "lane": "打野",
+      "games": 5,
+      "winRate": 40
+    },
+    "171": {
+      "name": "张飞",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 71,
+      "winRate": 50.7
+    },
+    "172": {
+      "name": "蚩奼",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 2,
+      "winRate": 0
+    },
+    "173": {
+      "name": "李元芳",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 1,
+      "winRate": 0
+    },
+    "174": {
+      "name": "虞姬",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 9,
+      "winRate": 66.7
+    },
+    "175": {
+      "name": "钟馗",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 48,
+      "winRate": 43.8
+    },
+    "176": {
+      "name": "杨玉环",
+      "job": "法师",
+      "lane": "中路",
+      "games": 9,
+      "winRate": 44.4
+    },
+    "177": {
+      "name": "苍",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 42,
+      "winRate": 54.8
+    },
+    "178": {
+      "name": "杨戬",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 39,
+      "winRate": 51.3
+    },
+    "179": {
+      "name": "女娲",
+      "job": "法师",
+      "lane": "中路",
+      "games": 33,
+      "winRate": 60.6
+    },
+    "180": {
+      "name": "哪吒",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 25,
+      "winRate": 56
+    },
+    "182": {
+      "name": "干将莫邪",
+      "job": "法师",
+      "lane": "中路",
+      "games": 1,
+      "winRate": 0
+    },
+    "183": {
+      "name": "雅典娜",
+      "job": "战士",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "184": {
+      "name": "蔡文姬",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 0,
+      "winRate": null
+    },
+    "186": {
+      "name": "太乙真人",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 46,
+      "winRate": 47.8
+    },
+    "187": {
+      "name": "东皇太一",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 3,
+      "winRate": 66.7
+    },
+    "188": {
+      "name": "大禹",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 0,
+      "winRate": null
+    },
+    "189": {
+      "name": "鬼谷子",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 0,
+      "winRate": null
+    },
+    "190": {
+      "name": "诸葛亮",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "191": {
+      "name": "大乔",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 0,
+      "winRate": null
+    },
+    "192": {
+      "name": "黄忠",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 1,
+      "winRate": 100
+    },
+    "193": {
+      "name": "铠",
+      "job": "战士",
+      "lane": "打野",
+      "games": 36,
+      "winRate": 55.6
+    },
+    "194": {
+      "name": "苏烈",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 70,
+      "winRate": 45.7
+    },
+    "195": {
+      "name": "百里玄策",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "196": {
+      "name": "百里守约",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 60,
+      "winRate": 45
+    },
+    "197": {
+      "name": "弈星",
+      "job": "法师",
+      "lane": "中路",
+      "games": 4,
+      "winRate": 25
+    },
+    "198": {
+      "name": "梦奇",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 2,
+      "winRate": 0
+    },
+    "199": {
+      "name": "公孙离",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 21,
+      "winRate": 38.1
+    },
+    "312": {
+      "name": "沈梦溪",
+      "job": "法师",
+      "lane": "中路",
+      "games": 79,
+      "winRate": 51.9
+    },
+    "501": {
+      "name": "明世隐",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 0,
+      "winRate": null
+    },
+    "502": {
+      "name": "裴擒虎",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 36,
+      "winRate": 55.6
+    },
+    "503": {
+      "name": "狂铁",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 60,
+      "winRate": 46.7
+    },
+    "504": {
+      "name": "米莱狄",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "505": {
+      "name": "瑶",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 0,
+      "winRate": null
+    },
+    "506": {
+      "name": "云中君",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "507": {
+      "name": "李信",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 0,
+      "winRate": null
+    },
+    "508": {
+      "name": "伽罗",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 0,
+      "winRate": null
+    },
+    "509": {
+      "name": "盾山",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 48,
+      "winRate": 56.3
+    },
+    "510": {
+      "name": "孙策",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 1,
+      "winRate": 0
+    },
+    "511": {
+      "name": "猪八戒",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 12,
+      "winRate": 25
+    },
+    "513": {
+      "name": "上官婉儿",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "514": {
+      "name": "亚连",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 0,
+      "winRate": null
+    },
+    "515": {
+      "name": "嫦娥",
+      "job": "法师",
+      "lane": "中路",
+      "games": 12,
+      "winRate": 50
+    },
+    "517": {
+      "name": "大司命",
+      "job": "战士",
+      "lane": "打野",
+      "games": 28,
+      "winRate": 50
+    },
+    "518": {
+      "name": "马超",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 36,
+      "winRate": 44.4
+    },
+    "519": {
+      "name": "敖隐",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 79,
+      "winRate": 51.9
+    },
+    "521": {
+      "name": "海月",
+      "job": "法师",
+      "lane": "中路",
+      "games": 55,
+      "winRate": 69.1
+    },
+    "522": {
+      "name": "曜",
+      "job": "战士",
+      "lane": "打野",
+      "games": 1,
+      "winRate": 0
+    },
+    "523": {
+      "name": "西施",
+      "job": "法师",
+      "lane": "中路",
+      "games": 9,
+      "winRate": 22.2
+    },
+    "524": {
+      "name": "蒙犽",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 1,
+      "winRate": 0
+    },
+    "525": {
+      "name": "鲁班大师",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 30,
+      "winRate": 60
+    },
+    "527": {
+      "name": "蒙恬",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 11,
+      "winRate": 54.6
+    },
+    "528": {
+      "name": "澜",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "529": {
+      "name": "盘古",
+      "job": "战士",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "531": {
+      "name": "镜",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 38,
+      "winRate": 60.5
+    },
+    "533": {
+      "name": "阿古朵",
+      "job": "射手",
+      "lane": "打野",
+      "games": 15,
+      "winRate": 46.7
+    },
+    "534": {
+      "name": "桑启",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 0,
+      "winRate": null
+    },
+    "536": {
+      "name": "夏洛特",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 70,
+      "winRate": 44.3
+    },
+    "537": {
+      "name": "司空震",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 50,
+      "winRate": 56
+    },
+    "538": {
+      "name": "云缨",
+      "job": "战士",
+      "lane": "打野",
+      "games": 15,
+      "winRate": 26.7
+    },
+    "540": {
+      "name": "金蝉",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "542": {
+      "name": "暃",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 11,
+      "winRate": 27.3
+    },
+    "544": {
+      "name": "赵怀真",
+      "job": "战士",
+      "lane": "打野",
+      "games": 11,
+      "winRate": 45.5
+    },
+    "545": {
+      "name": "莱西奥",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 44,
+      "winRate": 47.7
+    },
+    "547": {
+      "name": "卢雅那",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 16,
+      "winRate": 56.3
+    },
+    "548": {
+      "name": "戈娅",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 72,
+      "winRate": 51.4
+    },
+    "549": {
+      "name": "心魔六耳",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 14,
+      "winRate": 42.9
+    },
+    "550": {
+      "name": "空空儿",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 7,
+      "winRate": 71.4
+    },
+    "558": {
+      "name": "影",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 24,
+      "winRate": 54.2
+    },
+    "563": {
+      "name": "海诺",
+      "job": "法师",
+      "lane": "中路",
+      "games": 4,
+      "winRate": 75
+    },
+    "564": {
+      "name": "姬小满",
+      "job": "战士",
+      "lane": "对抗路",
+      "games": 2,
+      "winRate": 50
+    },
+    "577": {
+      "name": "少司缘",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 66,
+      "winRate": 48.5
+    },
+    "581": {
+      "name": "元流之子(坦克)",
+      "job": "坦克",
+      "lane": "对抗路",
+      "games": 24,
+      "winRate": 54.2
+    },
+    "582": {
+      "name": "元流之子(法师)",
+      "job": "法师",
+      "lane": "中路",
+      "games": 0,
+      "winRate": null
+    },
+    "583": {
+      "name": "元流之子(刺客)",
+      "job": "刺客",
+      "lane": "打野",
+      "games": 0,
+      "winRate": null
+    },
+    "584": {
+      "name": "元流之子(射手)",
+      "job": "射手",
+      "lane": "发育路",
+      "games": 31,
+      "winRate": 38.7
+    },
+    "585": {
+      "name": "元流之子(辅助)",
+      "job": "辅助",
+      "lane": "游走",
+      "games": 11,
+      "winRate": 45.5
+    }
+  }
+}

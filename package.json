@@ -1,0 +1,36 @@
+{
+  "name": "lwl-bp",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,magenta \"npm:dev:client\" \"npm:dev:server\"",
+    "dev:client": "vite",
+    "dev:server": "node --watch --env-file-if-exists=.env server/index.mjs",
+    "build": "vue-tsc -b && vite build",
+    "start": "node --env-file-if-exists=.env server/index.mjs",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:ui": "node scripts/smoke-ui.mjs",
+    "test:ai": "node scripts/smoke-ai.mjs",
+    "test:lineup": "node scripts/check-lineup.mjs",
+    "heroes:fetch": "node scripts/fetch-heroes.mjs",
+    "stats:fetch": "node scripts/fetch-kpl-stats.mjs"
+  },
+  "dependencies": {
+    "express": "^5.3.0",
+    "lucide-vue-next": "^0.577.0",
+    "vue": "^3.5.44"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "@vitejs/plugin-vue": "^6.0.10",
+    "@vue/tsconfig": "^0.9.1",
+    "concurrently": "^10.0.6",
+    "playwright-core": "^1.65.0",
+    "typescript": "~6.0.3",
+    "vite": "^8.3.6",
+    "vitest": "^5.1.0",
+    "vue-tsc": "^3.3.14"
+  }
+}
