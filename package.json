@@ -15,7 +15,9 @@
     "test:ai": "node scripts/smoke-ai.mjs",
     "test:lineup": "node scripts/check-lineup.mjs",
     "heroes:fetch": "node scripts/fetch-heroes.mjs",
-    "stats:fetch": "node scripts/fetch-kpl-stats.mjs"
+    "stats:fetch": "node scripts/fetch-kpl-stats.mjs",
+    "test:ai-variety": "node scripts/check-ai-variety.mjs",
+    "test:ai-style": "node scripts/check-ai-style.mjs"
   },
   "dependencies": {
     "express": "^5.3.0",

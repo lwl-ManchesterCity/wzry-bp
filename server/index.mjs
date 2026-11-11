@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url'
 import { createSynergyEngine } from './synergy.mjs'
 import { AXIS_LABEL, createMatchupModel } from './matchup.mjs'
 import { buildDecisionContext, createDraftAdvisor } from './ai-draft.mjs'
+import { DRAFT_STYLES, seededUnit, styleForGame } from '../shared/styles.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const heroes = JSON.parse(await readFile(path.join(root, 'src/data/heroes.json'), 'utf8'))
@@ -22,8 +23,12 @@ try {
 // 协同知识库：英雄能力标签 + 经典组合，缺文件时组合分析整体降级
 let synergyEngine = null
 let matchupModel = null
+// AI 决策要直接读原始标签（思路加权、临场针对都靠它），所以留一份引用
+let synergyRaw = null
+let macroRaw = null
 try {
   const synergy = JSON.parse(await readFile(path.join(root, 'src/data/hero-synergy.json'), 'utf8'))
+  synergyRaw = synergy
   // macro 七维（持续输出/范围/清线/推进/绕后/对线/抗控）缺失时，机制推导与五轴分析降级
   let macro = null
   try {
@@ -31,6 +36,7 @@ try {
   } catch {
     console.warn('未找到 src/data/hero-macro.json，组合推导与五轴分析将不可用')
   }
+  macroRaw = macro
   synergyEngine = createSynergyEngine({ synergy, heroes, macro })
   if (macro) matchupModel = createMatchupModel({ synergy, heroes, macro })
 } catch (error) {
@@ -409,7 +415,7 @@ function collectFactKeys(analysis) {
 
 // 人机对战的决策引擎；协同数据缺失时整个功能降级为不可用
 const advisor = synergyEngine
-  ? createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine })
+  ? createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine, synergy: synergyRaw, macro: macroRaw })
   : null
 
 const slimCandidates = (candidates) =>
@@ -423,7 +429,7 @@ const slimCandidates = (candidates) =>
 
 app.post('/api/ai-draft', async (request, response) => {
   try {
-    const { settings, blueName, redName, currentGame, available, side, type } = request.body || {}
+    const { settings, blueName, redName, currentGame, available, side, type, seed, previousGames, seriesIndex } = request.body || {}
     if (!Array.isArray(available) || !available.length) {
       return response.status(400).json({ error: '缺少可用英雄列表' })
     }
@@ -441,51 +447,83 @@ app.post('/api/ai-draft', async (request, response) => {
     const oppSide = side === 'blue' ? 'red' : 'blue'
     const oppPicks = picksOf(oppSide)
 
+    const gameNumber = Number(currentGame?.number) || 1
+    const step = actions.length
+    // 本局思路：同一系列赛按局号轮转，第 2 局不会继续用第 1 局的打法
+    const style = styleForGame(seed, gameNumber, seriesIndex)
+    // 系列赛记忆：前几局用过的英雄，非全局 BP 时避免整套照抄
+    const history = Array.isArray(previousGames) ? previousGames : []
+    const memory = history
+      .flatMap((game) => (Array.isArray(game?.actions) ? game.actions : []))
+      .filter((action) => action.side === side && action.type === 'pick')
+      .map((action) => heroMap.get(Number(action.heroId))?.name)
+      .filter(Boolean)
+
     // 选人看这套阵容对我方还缺什么；禁人看对手拿到它会强多少
     const teamPicks = type === 'ban' ? oppPicks : myPicks
     const candidates = advisor.rank({
       teamPicks,
       available: available.map(Number),
       myPicks,
+      oppPicks,
+      avoid: memory.map((name) => heroes.find((hero) => hero.name === name)?.id).filter(Boolean),
       limit: 8,
       mode: type,
+      style,
+      seed: String(seed ?? 'default'),
+      step,
     })
     if (!candidates.length) return response.status(400).json({ error: '没有可用的候选英雄' })
 
     const ordinal = actions.filter((action) => action.side === side && action.type === type).length + 1
     const sideName = side === 'blue' ? String(blueName || '蓝色方') : String(redName || '红色方')
     const nameOf = (id) => heroMap.get(Number(id))?.name || String(id)
+    const styleInfo = { key: style.key, label: style.label, summary: style.summary }
 
+    // 规则引擎兜底落子
     const ruleChoice = {
       heroId: candidates[0].id,
       heroName: candidates[0].name,
-      reason: candidates[0].reasons.slice(0, 2).join('，') || '按阵容需要选择',
+      reason: candidates[0].reasons.slice(0, 2).join('，') || `按「${style.label}」思路选择`,
       engine: 'rules',
+      style: styleInfo,
       shortlist: slimCandidates(candidates),
     }
 
     // 未配置密钥时仍可对战，只是由规则引擎直接落子
     if (!apiKey()) return response.json(ruleChoice)
 
+    // 候选顺序按种子打散：模型有「优先选第一条」的倾向，固定顺序等于固定答案
+    const ordered = candidates
+      .map((item) => ({ item, key: seededUnit(String(seed ?? 'default'), 'order', step, item.id) }))
+      .sort((a, b) => a.key - b.key)
+      .map((entry) => entry.item)
+
     const decision = buildDecisionContext({
       type,
       side,
       sideName,
-      gameNumber: Number(currentGame?.number) || 1,
+      gameNumber,
       picks: myPicks.map(nameOf),
       oppPicks: oppPicks.map(nameOf),
-      candidates,
+      candidates: ordered,
       banCount: ordinal,
+      style,
+      memory: [...new Set(memory)],
     })
 
+    const styleGuide = type === 'ban' ? style.banHint : style.pickHint
     const systemPrompt = `你是一名 KPL 职业教练，正在替${sideName}完成禁选。
 ${decision}
 
+本局你的思路是「${style.label}」——${styleGuide}。
 从候选中挑一个最合适的，按优先级考虑：
-1. 组合协同——能与已选英雄组成成型体系的最优先；
-2. 阵容补强——补前排、开团、保护、控制或伤害类型；
-3. 分路覆盖——别让队伍缺位；
-4. 禁人时要禁掉对手最想要、最能成型的英雄，但不要禁掉我方自己急需的。
+1. 是否符合本局思路（同样强的两个英雄，选更贴思路的那个）；
+2. 组合协同——能与已选英雄组成成型体系的最优先；
+3. 阵容补强——补前排、开团、保护、控制或伤害类型；
+4. 分路覆盖——别让队伍缺位；
+5. 禁人时要禁掉对手最想要、最能成型的英雄，但不要禁掉我方自己急需的。
+候选顺序是打散的，不代表推荐度，别默认选第 1 条。
 heroId 必须原样复制候选列表里给出的编号，绝不能自己编造；heroName 与之一致。
 理由必须具体，点出协同关系或补强点，不超过 40 字，不要空话。
 只输出一个 JSON 对象：{"heroId": 数字, "heroName": "候选里的英雄名", "reason": "简短理由"}`
@@ -499,7 +537,7 @@ heroId 必须原样复制候选列表里给出的编号，绝不能自己编造�
           { role: 'system', content: systemPrompt },
           { role: 'user', content: `请给出第 ${ordinal} 手${type === 'ban' ? '禁用' : '选择'}。` },
         ],
-        temperature: 0.85,
+        temperature: 0.95,
         max_tokens: 200,
         response_format: { type: 'json_object' },
       }),
@@ -525,6 +563,7 @@ heroId 必须原样复制候选列表里给出的编号，绝不能自己编造�
       heroName: matched.name,
       reason: String(parsed?.reason || '').slice(0, 80) || matched.reasons[0] || '按阵容需要选择',
       engine: 'deepseek',
+      style: styleInfo,
       shortlist: slimCandidates(candidates),
     })
   } catch (error) {

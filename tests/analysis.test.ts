@@ -199,15 +199,26 @@ describe('AI 禁人不重复禁同一分路', () => {
     expect([ID.gali, ID.luban, ID.huangzhong]).not.toContain(best.id)
   })
 
-  it('对方没有射手时，禁鲁班仍被视为拆保护链的高价值操作', () => {
+  it('禁人不再用「对方缺哪个位置」当理由，否则会固定禁同一个位置', () => {
+    const myPicks = [ID.dunshan]
+    // 对方只有对抗路、发育路、中路，缺打野与游走
+    const oppPicks = [ID.caocao, ID.houyi, ID.huowu]
+    const available = heroes
+      .map((hero) => hero.id)
+      .filter((id) => !myPicks.includes(id) && !oppPicks.includes(id))
+    const ranked = advisor.rank({ teamPicks: oppPicks, available, myPicks, limit: 200, mode: 'ban' })
+    const laneFill = ranked.flatMap((item) => item.reasons).filter((reason) => /^补.+位$/.test(reason))
+    expect(laneFill).toHaveLength(0)
+  })
+
+  it('禁人的价值来自拆对手的成型体系，而不是单看英雄强弱', () => {
     const myPicks = [ID.dunshan]
     const oppPicks = [ID.caocao, ID.zhangfei, ID.huowu]
     const available = heroes
       .map((hero) => hero.id)
       .filter((id) => !myPicks.includes(id) && !oppPicks.includes(id))
-    const ranked = advisor.rank({ teamPicks: oppPicks, available, myPicks, limit: 200, mode: 'ban' })
-    const luban = ranked.find((item) => item.id === ID.luban)
-    expect(luban).toBeTruthy()
-    expect(luban!.adjusted).toBeGreaterThan(0)
+    const ranked = advisor.rank({ teamPicks: oppPicks, available, myPicks, limit: 20, mode: 'ban' })
+    const denial = ranked.filter((item) => item.reasons.some((reason) => reason.includes('对方会与')))
+    expect(denial.length).toBeGreaterThan(0)
   })
 })

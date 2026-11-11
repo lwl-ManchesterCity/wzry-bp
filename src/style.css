@@ -1499,6 +1499,14 @@ h1, h2, h3, h4 { margin: 0; }
 .ai-note-line svg { flex: 0 0 auto; color: var(--gold-2); }
 .ai-note-line b { color: var(--red-2); font-weight: 600; }
 .ai-note-line.blue b { color: var(--blue-2); }
+.ai-style-chip {
+  margin-left: auto; flex: 0 0 auto;
+  padding: 1px 7px; border-radius: 999px;
+  font-size: 9.5px; letter-spacing: .02em;
+  color: var(--gold-2); border: 1px solid rgba(214, 168, 92, .32);
+  background: rgba(214, 168, 92, .1);
+  cursor: default;
+}
 
 .hero-pool { position: relative; }
 .pool-lock {

@@ -22,6 +22,36 @@ import type {
 /** laneId -> heroId，由选择结果算出的默认分路 */
 type LaneMap = LaneLineup
 
+/** 每场系列赛换一个种子：AI 的思路与同分排序都由它决定，换一场就不是同一份答卷 */
+function newSeriesSeed() {
+  return Math.random().toString(36).slice(2, 10)
+}
+
+/**
+ * 第几场系列赛记在本地：刷新页面也不会让 AI 退回第一种打法，
+ * 否则每次重开浏览器都从同一个思路开始，看起来还是固定套路。
+ */
+const SERIES_KEY = 'wzry-bp-series-index'
+
+function readSeriesIndex() {
+  try {
+    const raw = Number(window.localStorage.getItem(SERIES_KEY))
+    return Number.isFinite(raw) && raw > 0 ? raw : 0
+  } catch {
+    return 0
+  }
+}
+
+function bumpSeriesIndex() {
+  const next = readSeriesIndex() + 1
+  try {
+    window.localStorage.setItem(SERIES_KEY, String(next))
+  } catch {
+    // 隐私模式下 localStorage 不可写，退化成内存计数
+  }
+  return next
+}
+
 export function useDraft(heroes: Hero[]) {
   const settings = reactive<SeriesSettings>({
     mode: 'global',
@@ -31,6 +61,9 @@ export function useDraft(heroes: Hero[]) {
     humanSide: 'blue',
   })
   const previousGames = ref<Game[]>([])
+  const seriesSeed = ref(newSeriesSeed())
+  /** 第几场系列赛：AI 的思路按它轮转，保证每开一场新系列赛就换打法 */
+  const seriesIndex = ref(readSeriesIndex())
   const currentGame = ref<Game>(createGame(1, settings.format))
   const blueName = ref('蓝色方')
   const redName = ref('红色方')
@@ -73,6 +106,8 @@ export function useDraft(heroes: Hero[]) {
 
   function resetSeries() {
     previousGames.value = []
+    seriesSeed.value = newSeriesSeed()
+    seriesIndex.value = bumpSeriesIndex()
     currentGame.value = createGame(1, settings.format)
     clearTransientState()
   }
@@ -202,6 +237,8 @@ export function useDraft(heroes: Hero[]) {
   return {
     settings,
     previousGames,
+    seriesSeed,
+    seriesIndex,
     currentGame,
     blueName,
     redName,

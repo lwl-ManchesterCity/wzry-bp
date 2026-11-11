@@ -29,6 +29,8 @@ const heroMap = new Map(heroes.map((hero) => [hero.id, hero]))
 const {
   settings,
   previousGames,
+  seriesSeed,
+  seriesIndex,
   currentGame,
   blueName,
   redName,
@@ -62,6 +64,8 @@ const {
 const screen = ref<'lobby' | 'draft'>('lobby')
 const aiThinking = ref(false)
 const aiNote = ref('')
+/** AI 本局思路，由服务端按系列赛种子与局号决定 */
+const aiStyle = ref<{ key: string; label: string; summary: string } | null>(null)
 const reviewOpen = ref(false)
 const aiConfigured = ref(false)
 const aiModel = ref('deepseek-chat')
@@ -74,6 +78,7 @@ const humanName = computed(() => (settings.humanSide === 'blue' ? blueName.value
 const modeLabel = computed(() => (settings.mode === 'global' ? 'KPL 全局 BP' : '普通单局'))
 const rulesetLabel = computed(() => (settings.ruleset === 'kpl2026' ? 'KPL 2026 · 5 Ban' : '经典 · 4 Ban'))
 const poolLocked = computed(() => isAiGame.value && (aiThinking.value || aiTurn.value))
+const aiThinkingLabel = computed(() => (aiStyle.value ? `${aiName.value} 正在按「${aiStyle.value.label}」思考` : `${aiName.value} 正在思考`))
 
 const toHeroes = (ids: number[]) => ids.map((id) => heroMap.get(id)).filter((hero): hero is Hero => Boolean(hero))
 const bluePicks = computed(() => toHeroes(sidePicks('blue')))
@@ -201,6 +206,7 @@ function startDraft() {
   }
   resetSeries()
   aiNote.value = ''
+  aiStyle.value = null
   screen.value = 'draft'
 }
 
@@ -210,6 +216,7 @@ function backToSetup() {
   aiThinking.value = false
   resetSeries()
   aiNote.value = ''
+  aiStyle.value = null
   screen.value = 'lobby'
 }
 
@@ -236,9 +243,12 @@ async function runAiTurn() {
         blueName: blueName.value,
         redName: redName.value,
         currentGame: currentGame.value,
+        previousGames: previousGames.value,
         available,
         side,
         type,
+        seed: seriesSeed.value,
+        seriesIndex: seriesIndex.value,
       }),
     }).finally(() => window.clearTimeout(timer))
 
@@ -248,6 +258,7 @@ async function runAiTurn() {
     if (!response.ok || !result?.heroId) throw new Error(result?.error || 'AI 未返回选择')
 
     aiNote.value = result.reason || ''
+    if (result.style) aiStyle.value = result.style
     confirmHero(Number(result.heroId))
     advanced = currentGame.value.actions.length > expected
     if (currentGame.value.isPeak && sidePicks(aiSide.value).length >= 5) {
@@ -430,6 +441,7 @@ onMounted(async () => {
         <div v-if="isAiGame && aiNote" class="ai-note-line" :class="aiSide">
           <Bot :size="13" />
           <span><b>{{ aiName }}</b> 上一手：{{ aiNote }}</span>
+          <span v-if="aiStyle" class="ai-style-chip" :title="aiStyle.summary">本局思路 · {{ aiStyle.label }}</span>
         </div>
 
         <HeroPool
@@ -444,7 +456,7 @@ onMounted(async () => {
           :red-bans="redBans"
           :has-next-game="!isSeriesEnd"
           :locked="poolLocked"
-          :locked-label="`${aiName} 正在思考`"
+          :locked-label="aiThinkingLabel"
           @select="selectedHeroId = $event"
         />
 
