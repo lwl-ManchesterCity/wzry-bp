@@ -76,18 +76,27 @@ function simulate(seed, seriesIndex = 0, humanSide = 'blue') {
     ;(step.type === 'pick' ? picks : bans)[aiSide].push(chosen.id)
   }
   const name = (id) => heroMap.get(id)?.name || String(id)
+  const evaluated = advisor.scoreLineup(picks[aiSide], {
+    style, oppPicks: picks[humanSide], final: true,
+  })
   return {
     style: style.label,
     bans: bans[aiSide].map(name),
     picks: picks[aiSide].map(name),
+    lanes: evaluated.metrics?.lanes || [],
+    teamScore: evaluated.score,
   }
 }
 
 const seeds = ['s1', 's2', 's3', 's4', 's5', 's6', 's7', 's8']
 const results = seeds.map((seed, index) => ({ seed, ...simulate(seed, index) }))
 for (const row of results) {
+  const lanes = row.lanes.join('/')
   console.log(`${row.seed.padEnd(3)} ${row.style.padEnd(5)} 禁 ${row.bans.join('/')}`)
-  console.log(`    选 ${row.picks.join('/')}`)
+  console.log(`    选 ${row.picks.join('/')}｜整队 ${row.teamScore.toFixed(1)}｜${lanes}`)
+  // 整队评分只有在「能真正上场」的前提下才有意义，五路缺一就是不可用的阵容
+  if (row.picks.length !== 5) throw new Error(`${row.seed} 只选出 ${row.picks.length} 人，阵容不完整`)
+  if (new Set(row.lanes).size !== 5) throw new Error(`${row.seed} 分路重复：${lanes}`)
 }
 
 const banKey = (row) => row.bans.join()

@@ -480,11 +480,14 @@ app.post('/api/ai-draft', async (request, response) => {
     const nameOf = (id) => heroMap.get(Number(id))?.name || String(id)
     const styleInfo = { key: style.key, label: style.label, summary: style.summary }
 
-    // 规则引擎兜底落子
+    // 规则引擎兜底落子；完整五人名单留给模型阅读，界面理由保持短句
+    const conciseReasons = candidates[0].reasons.filter((reason) => {
+      return !reason.startsWith('整队方案：') && !reason.startsWith('阻止对手补成：')
+    })
     const ruleChoice = {
       heroId: candidates[0].id,
       heroName: candidates[0].name,
-      reason: candidates[0].reasons.slice(0, 2).join('，') || `按「${style.label}」思路选择`,
+      reason: conciseReasons.slice(0, 2).join('，').slice(0, 80) || `按「${style.label}」思路选择`,
       engine: 'rules',
       style: styleInfo,
       shortlist: slimCandidates(candidates),
@@ -518,11 +521,11 @@ ${decision}
 
 本局你的思路是「${style.label}」——${styleGuide}。
 从候选中挑一个最合适的，按优先级考虑：
-1. 是否符合本局思路（同样强的两个英雄，选更贴思路的那个）；
-2. 组合协同——能与已选英雄组成成型体系的最优先；
-3. 阵容补强——补前排、开团、保护、控制或伤害类型；
-4. 分路覆盖——别让队伍缺位；
-5. 禁人时要禁掉对手最想要、最能成型的英雄，但不要禁掉我方自己急需的。
+1. 整队方案——候选附带的五人阵容已经比较过前排、控制链接火、保护、伤害类型、强势期、分路与对位，不要只按单英雄强度否决它；
+2. 禁人收益——优先让对手最佳整队评分下降更多的候选，而不是只禁版本热门；
+3. 是否符合本局思路（同样适配整队时，选更贴思路的那个）；
+4. 组合协同与阵容补强——能与已选英雄组成成型体系，并补上前排、开团、保护、控制或伤害类型；
+5. 不要禁掉我方自己急需的英雄。
 候选顺序是打散的，不代表推荐度，别默认选第 1 条。
 heroId 必须原样复制候选列表里给出的编号，绝不能自己编造；heroName 与之一致。
 理由必须具体，点出协同关系或补强点，不超过 40 字，不要空话。

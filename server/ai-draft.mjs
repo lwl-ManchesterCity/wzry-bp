@@ -1,20 +1,16 @@
 /**
- * AI 对局决策
+ * AI 对局决策：个体评分负责初筛，team-planner 负责五人整队规划。
  *
- * 思路：先由规则引擎按「阵容结构 + 组合协同 + 赛季数据 + 分路覆盖 + 本局思路」给所有可用英雄打分，
- * 取出前 N 名候选，再交给模型在候选里挑一个。这样模型只负责取舍与理由，
- * 不会选出零前排、五射手的离谱阵容，也不会因为模型抽风导致对局卡死。
+ * Pick：生成多套五路齐全的完整阵容，候选能进入多强的阵容，决定当前一手的价值。
+ * Ban：比较对手能拿候选与候选被禁后的最佳阵容，整队分差才是主要禁用收益。
+ * 个体强度、组合、思路与临场针对仍保留，但不再由单个英雄分数直接决定名次。
  *
- * Ban 与 Pick 共用同一个「这个英雄对我的阵容值多少分」的评估函数：
- * Ban 就把候选放进对方的阵容里算价值，价值越高越该禁。
- *
- * 为了让 AI 不是每局都交同一份答卷，这里有三层差异：
- *   1. 每局抽一个「思路」（shared/styles.mjs），不同思路下什么算好英雄不一样；
- *   2. 按对手/自己的阵容实时调整（对方双开团就抬抗控、我方脆皮就禁切入）；
- *   3. 分数接近的候选按种子打散，同分不再永远按英雄表顺序取第一个。
+ * 每局思路、系列赛记忆和种子抖动继续提供可复现的差异；模型只能在规则候选中取舍，
+ * 小英雄池或无法构造完整阵容时自动回退到个体评分，保证对局不会卡死。
  */
 
 import { DRAFT_STYLES, seededUnit } from '../shared/styles.mjs'
+import { createTeamPlanner } from './team-planner.mjs'
 
 const LANE_BY_ID = { 1: '对抗路', 2: '打野', 3: '中路', 4: '发育路', 5: '游走' }
 const ALL_LANES = ['对抗路', '中路', '发育路', '打野', '游走']
@@ -326,6 +322,10 @@ export function createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine, s
     return { id, name: hero?.name || String(id), score, reasons, lane }
   }
 
+  const teamPlanner = synergyEngine
+    ? createTeamPlanner({ heroes, heroMap, synergyEngine, synergy, macro, laneOf, strengthScore, styleScore })
+    : null
+
   /**
    * @param {object} options
    * @param {number[]} options.teamPicks 评估基准阵容（Pick 时是自己，Ban 时是对方）
@@ -352,16 +352,27 @@ export function createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine, s
   }) {
     const plan = mode === 'ban' ? buildThreatPlan(myPicks) : buildCounterPlan(oppPicks, style)
     const avoidSet = new Set((avoid || []).map(Number))
-    const scored = available.map((heroId) => {
+    let scored = available.map((heroId) => {
       const result = evaluate(heroId, teamPicks, mode, { style, plan })
-      // 只ban 场景才需要「别禁掉我方急需的人」这层修正
-      let adjusted = mode === 'ban' && myPicks.length
-        ? result.score - evaluate(heroId, myPicks, 'pick', { style }).score * 0.55
-        : result.score
-      if (avoidSet.has(Number(heroId))) adjusted -= mode === 'ban' ? 4 : 14
-      // 分数接近时按种子打散：同样的种子必得同样的结果，换一局种子就换一种排法
+      // 个体价值仍保留，但只作整队规划的输入与小权重修正，不再直接决定最终名次
       const jitter = (seededUnit(seed, mode, step, heroId) * 2 - 1) * (mode === 'pick' ? 7 : 5)
-      return { ...result, base: Math.round(adjusted), adjusted: adjusted + jitter }
+      return { ...result, base: result.score, adjusted: result.score + jitter }
+    })
+
+    if (teamPlanner && teamPicks.length < 5 && teamPicks.length + available.length >= 5) {
+      scored = mode === 'pick'
+        ? teamPlanner.planPicks({ baseScored: scored, teamPicks, available, myPicks, oppPicks, style, seed })
+        : teamPlanner.planBans({ baseScored: scored, teamPicks, available, myPicks, oppPicks, style, seed, step })
+    }
+
+    scored = scored.map((result) => {
+      let adjusted = result.adjusted
+      // 别为了拆对手，把我自己下一手急需的英雄禁掉
+      if (mode === 'ban' && myPicks.length) {
+        adjusted -= evaluate(result.id, myPicks, 'pick', { style }).score * 0.55
+      }
+      if (avoidSet.has(Number(result.id))) adjusted -= mode === 'ban' ? 4 : 14
+      return { ...result, base: Math.round(result.base ?? result.score), adjusted }
     })
     scored.sort((a, b) => b.adjusted - a.adjusted)
     return scored.slice(0, limit)
@@ -372,7 +383,17 @@ export function createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine, s
     return candidates[0] || null
   }
 
-  return { rank, evaluate, laneOf, choose, buildCounterPlan, buildThreatPlan }
+  return {
+    rank,
+    evaluate,
+    laneOf,
+    choose,
+    buildCounterPlan,
+    buildThreatPlan,
+    buildLineups: teamPlanner?.buildLineups,
+    scoreLineup: teamPlanner?.scoreLineup,
+    inferOpponentStyle: teamPlanner?.inferOpponentStyle,
+  }
 }
 
 /** 把候选与局面拼成模型能直接读的提示 */
@@ -395,7 +416,7 @@ export function buildDecisionContext({
     `我方已选：${picks.length ? picks.join('、') : '（尚未选人）'}`,
     `对方已选：${oppPicks.length ? oppPicks.join('、') : '（尚未选人）'}`,
     '',
-    '规则引擎已按阵容结构、组合协同、分路覆盖、赛季数据与本局思路筛出以下候选（只能从中选一个，顺序不代表推荐度）：',
+    '规则引擎已生成并比较多套五人完整阵容，再按整队结构、组合协同、对位关系与本局思路筛出以下候选（只能从中选一个，顺序不代表推荐度）：',
     ...candidates.map((item, index) => `${index + 1}. ${label(item)}`),
   )
   return lines.join('\n')
