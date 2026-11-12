@@ -24,6 +24,7 @@ const ID = {
   houyi: 169,
   huowu: 157,
   donghuang: 187,
+  caowenji: 184,
   gali: 508,
   luban: 112,
   huangzhong: 192,
@@ -72,18 +73,25 @@ describe('macro 七维标注', () => {
 })
 
 describe('机制推导', () => {
-  it('盾山+艾琳必须命中保护链（强），即使组合库里没有这一对', () => {
+  it('盾山+艾琳命中「封挡接输出」，即使组合库里没有这一对', () => {
     const result = engine.analyzeTeam(BLUE, [])
-    const hit = result.combos.find((combo) => combo.name === '保护链' && combo.heroes.includes('艾琳'))
+    const hit = result.combos.find((combo) => combo.name === '封挡接输出' && combo.heroes.includes('艾琳'))
     expect(hit).toBeTruthy()
-    expect(hit?.tier).toBe('strong')
     expect(hit?.source).toBe('derived')
   })
 
-  it('保护链的排序高于封挡接消耗：核心能否输出比消耗手段更重要', () => {
+  it('自带位移的核心不算零位移保护链', () => {
+    // 艾琳有短距位移（被动飞行、二技能），把她当成「靠贴身保护才能进场」的核心
+    // 会得出「鲁班大师保护莱西奥」这类反事实结论，还会挤掉真正的强开体系
     const result = engine.analyzeTeam(BLUE, [])
+    expect(result.combos.some((combo) => combo.name === '保护链' && combo.heroes.includes('艾琳'))).toBe(false)
+  })
+
+  it('保护链的排序高于消耗封锁：核心能否输出比消耗手段更重要', () => {
+    // 蔡文姬（保护 3）+ 后羿（低机动核心）构成保护链；蔡文姬 + 沈梦溪只构成消耗封锁
+    const result = engine.analyzeTeam([ID.caowenji, ID.houyi, ID.shenmengxi, ID.caocao, ID.jing], [])
     const protect = result.combos.findIndex((combo) => combo.name === '保护链')
-    const poke = result.combos.findIndex((combo) => combo.name === '封挡接消耗')
+    const poke = result.combos.findIndex((combo) => combo.name === '消耗封锁')
     expect(protect).toBeGreaterThanOrEqual(0)
     expect(poke).toBeGreaterThanOrEqual(0)
     expect(protect).toBeLessThan(poke)

@@ -48,6 +48,62 @@ const AXIS_FORMULA = {
   siege: (x) => x.m.waveclear * 2 + x.m.siege * 2 + x.m.flank,
 }
 
+/**
+ * 团战不是五个人的属性相加。
+ *
+ * 一次能打赢的团战要闭合四个环节：有人先手 → 有人接火 → 有人承伤 → 核心有人保。
+ * 只按属性求和，会让「五个人都带点前排和输出」的散装阵容，压过
+ * 「一个真坦克 + 一个专业保人」的成型阵容 —— 因为前者凑数多，后者专精。
+ * 所以这里按环节是否闭合加减，让「结构」而不是「数值堆叠」决定团战轴。
+ */
+function teamfightShape(list) {
+  const notes = []
+  let value = 0
+  if (!list.length) return { value, notes }
+  const engage = list.filter((x) => x.t.engage >= 3)
+  // 接火：有人能在先手后立刻把伤害压进去（爆发或范围伤害）
+  const followUp = list.some((x) => x.t.burst >= 3 || x.m.aoe >= 3)
+  const peel = list.filter((x) => x.t.peel >= 2)
+  // 输出核心：靠 dps 吃饭、自己站不住（前排 0-1）
+  const carry = list.filter((x) => x.m.dps >= 3 && x.t.front <= 1)
+  // 真承伤点：front>=3 才算能站住吃伤害，战士的 1-2 不算
+  const tanks = list.filter((x) => x.t.front >= 3)
+
+  if (engage.length) {
+    if (followUp) {
+      value += 8
+      notes.push('先手有人接火')
+    } else {
+      value -= 8
+      notes.push('先手没人接火')
+    }
+  }
+  if (carry.length) {
+    if (peel.length) {
+      value += 6
+      notes.push('输出核心有保护')
+    } else {
+      value -= 8
+      notes.push('输出核心没人保护')
+    }
+  }
+  if (!tanks.length) {
+    value -= 6
+    notes.push('没有站得住的承伤点')
+  }
+  // 伤害类型集中到 4 人以上，对面一件物抗/法抗装就能同时针对整队
+  const mix = list.reduce((acc, x) => {
+    acc[x.t.damage] = (acc[x.t.damage] || 0) + 1
+    return acc
+  }, {})
+  const dominant = Object.entries(mix).sort((a, b) => b[1] - a[1])[0]
+  if (dominant && dominant[1] >= 4) {
+    value -= 6
+    notes.push(`伤害类型集中在${dominant[0] === 'phys' ? '物理' : dominant[0] === 'magic' ? '法术' : '混伤'}`)
+  }
+  return { value, notes }
+}
+
 export function createMatchupModel({ synergy, heroes, macro = null }) {
   const heroMap = new Map(heroes.map((hero) => [Number(hero.id), hero]))
   const detail = (id) => {
@@ -117,7 +173,10 @@ export function createMatchupModel({ synergy, heroes, macro = null }) {
     for (const [key, fn] of Object.entries(AXIS_FORMULA)) {
       out[key] = list.reduce((sum, item) => sum + fn(item), 0)
     }
-    return out
+    // 团战轴叠加「环节是否闭合」的加减，其余轴仍按属性求和
+    const shape = teamfightShape(list)
+    out.teamfight += shape.value
+    return { raw: out, shape }
   }
 
   /** 每轴给出 0-100 绝对分（相对单人满分的 5 人上限），并列出主要贡献者 */
@@ -137,13 +196,15 @@ export function createMatchupModel({ synergy, heroes, macro = null }) {
         .slice(0, 2)
         .map((x) => x.name)
       out[key] = {
-        blue: toScore(b[key], key),
-        red: toScore(r[key], key),
-        diff: toScore(b[key], key) - toScore(r[key], key),
-        blueRaw: Number(b[key].toFixed(1)),
-        redRaw: Number(r[key].toFixed(1)),
+        blue: toScore(b.raw[key], key),
+        red: toScore(r.raw[key], key),
+        diff: toScore(b.raw[key], key) - toScore(r.raw[key], key),
+        blueRaw: Number(b.raw[key].toFixed(1)),
+        redRaw: Number(r.raw[key].toFixed(1)),
         blueDrivers: drivers(bluePicks),
         redDrivers: drivers(redPicks),
+        // 结构结论：让模型能说清「为什么团战强/弱」，而不是只念一个分数
+        ...(key === 'teamfight' ? { blueShape: b.shape.notes, redShape: r.shape.notes } : {}),
       }
     }
     return out

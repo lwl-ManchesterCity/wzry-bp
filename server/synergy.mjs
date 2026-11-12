@@ -101,6 +101,7 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
 
     const KIND = {
       保护链: 'protection',
+      封挡接输出: 'protection',
       消耗封锁: 'poke',
       开团接火: 'engage',
       切入收割: 'pickoff',
@@ -116,10 +117,12 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
         if (comboIndex.has(pairKey(A.id, B.id))) continue
 
         // 保护链：保人型英雄 + 低机动持续输出核心
+        // 门槛必须是真的「站桩」：机动 2 的射手自己有位移，把他算成需要保护的核心，
+        // 会得出「鲁班大师保莱西奥」这种反事实结论，还挤掉了真正的强开体系
         let protectedHit = false
         for (const [P, C] of [[A, B], [B, A]]) {
           if (protectedHit) break
-          if (P.t.peel >= 2 && C.m.dps >= 3 && C.t.mobility <= 2) {
+          if (P.t.peel >= 2 && C.m.dps >= 3 && C.t.mobility <= 1) {
             const strong = P.t.peel >= 3
             push(
               '保护链',
@@ -130,6 +133,25 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
               { carry: C.name, protector: P.name, recipient: C.name },
             )
             protectedHit = true
+          }
+        }
+
+        // 封挡接输出：正面封挡型辅助 + 持续输出核心
+        // 核心自带位移时不算「保护链」（那不是靠保护进场的），但盾山这种
+        // 能正面挡飞行物的辅助依然能给核心腾出安全输出位，属于另一类搭配
+        if (!protectedHit) {
+          for (const [P, C] of [[A, B], [B, A]]) {
+            if (P.t.peel >= 3 && C.m.dps >= 3) {
+              push(
+                '封挡接输出',
+                'conditional',
+                P,
+                C,
+                `${P.name}正面封挡飞行物与突进，${C.name}可以在盾后稳定输出；核心自带位移，靠的不是贴身保护而是封挡腾出的角度`,
+                { carry: C.name, protector: P.name, recipient: C.name },
+              )
+              break
+            }
           }
         }
 
@@ -204,7 +226,8 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
               S,
               W,
               `${W.name}快速清线推波，${S.name}在塔外安全点塔，兵线一到就能持续磨损防御塔`,
-              { recipient: S.name },
+              // 同一条「清线的人」配不同点塔位不是两种组合，去重时按清线者算
+              { recipient: S.name, anchor: W.name },
             )
             break
           }
@@ -215,7 +238,9 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
     const seenRecipient = new Set()
     return derived.filter((combo) => {
       if (!combo.recipient) return true
-      const key = `${combo.name}|${combo.recipient}`
+      const key = combo.anchor
+        ? `${combo.name}|${combo.anchor}`
+        : `${combo.name}|${combo.recipient}`
       if (seenRecipient.has(key)) return false
       seenRecipient.add(key)
       return true

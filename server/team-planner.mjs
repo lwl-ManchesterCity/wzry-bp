@@ -377,7 +377,9 @@ export function createTeamPlanner({
       // 只在 ±8% 内浮动：分差明显的候选照样排前面，同档的按种子换人。
       const tilt = 1 + (seededUnit(seed, 'ban-impact', step, item.id) * 2 - 1) * 0.08
       const impact = rawImpact * tilt
-      const adjusted = impact * 5 + item.adjusted * 0.35
+      // 整队损失是主信号，个体强度只用来区分「损失差不多」的候选。
+      // 权重必须让「有一点损失」压过「零损失但单卡很强」，否则禁用又退回按英雄强度排序
+      const adjusted = impact * 8 + item.adjusted * 0.25
       const reasons = withCandidate && rawImpact > 0.5
         ? [...new Set([
             `禁后对手最佳整队评分下降 ${rawImpact.toFixed(1)}`,

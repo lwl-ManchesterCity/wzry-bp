@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url'
 import { createSynergyEngine } from './synergy.mjs'
 import { AXIS_LABEL, createMatchupModel } from './matchup.mjs'
 import { buildDecisionContext, createDraftAdvisor } from './ai-draft.mjs'
+import { createMetaModel, describeMembers } from './meta-strength.mjs'
+import { judgeComposition, compareComposition } from './composition.mjs'
 import { DRAFT_STYLES, seededUnit, styleForGame } from '../shared/styles.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -42,6 +44,9 @@ try {
 } catch (error) {
   console.warn('未找到 src/data/hero-synergy.json，复盘将不含组合协同分析', error)
 }
+
+// 版本强度只依赖赛季数据，与协同库互不牵连：协同库缺失时仍能给出「谁在版本里」
+const metaModel = kplStats ? createMetaModel({ stats: kplStats, heroes }) : null
 
 const app = express()
 app.use(express.json({ limit: '256kb' }))
@@ -100,15 +105,23 @@ function parseModelJson(content) {
 }
 
 // 模型对组合的解释必须落在程序检测出的组合上，避免它编造不存在的搭配
-function matchDetectedCombo(text, detected) {
+function matchDetectedCombo(text, detected, used = new Set()) {
   const value = String(text || '')
-  return detected.find((item) => item.heroes.every((name) => value.includes(name)))
+  // 同一对英雄可能挂两条不同组合（刘禅+沈梦溪既是开团接火也是推进压制），
+  // 只按英雄名匹配会把第二条也标成第一条，所以先按组合名匹配，再退回英雄名
+  const pool = detected.filter((item) => !used.has(item))
+  const byName = pool.find((item) => item.name && value.includes(item.name))
+  if (byName) return byName
+  return pool.find((item) => item.heroes.every((name) => value.includes(name)))
+      || detected.find((item) => item.heroes.every((name) => value.includes(name)))
 }
 
 function normalizeReview(value, detectedCombos = [], allowedKeys = new Set()) {
   if (!value || typeof value !== 'object') throw new Error('模型未返回 JSON 对象')
   const blueWinRate = Math.max(0, Math.min(100, Number(value.verdict?.blueWinRate)))
   if (!Number.isFinite(blueWinRate)) throw new Error('模型缺少有效的胜率倾向')
+  // 一条检测出的组合只对应一条说明，避免同一对英雄的不同组合互相串台
+  const usedCombos = new Set()
   return {
     verdict: {
       favoredSide: ['blue', 'red', 'even'].includes(value.verdict?.favoredSide) ? value.verdict.favoredSide : 'even',
@@ -122,8 +135,9 @@ function normalizeReview(value, detectedCombos = [], allowedKeys = new Set()) {
     synergyNotes: Array.isArray(value.synergyNotes)
       ? value.synergyNotes
           .map((item) => {
-            const matched = matchDetectedCombo(item?.combo, detectedCombos)
+            const matched = matchDetectedCombo(item?.combo, detectedCombos, usedCombos)
             if (!matched) return null
+            usedCombos.add(matched)
             return {
               side: matched.side,
               combo: matched.heroes.join(' + '),
@@ -260,6 +274,16 @@ function analyzeSynergy(game, lineups = null) {
     )
     analysis.axisNotes = matchupModel.axisNotes(analysis.axes)
   }
+
+  // 版本强度与五轴独立：五轴讲「这套阵容怎么打」，版本强度讲「这些英雄在不在版本里」。
+  // 刘禅 0 场这类事实只有放在这里，模型才有依据把「没人用的英雄」算成真实短板。
+  if (metaModel) {
+    analysis.meta = metaModel.compare(pickIds('blue'), pickIds('red'))
+  }
+
+  // 体系闭环度：五个齿轮（扛/开/保/伤害/强势期/+成型协同）咬不咬得上。
+  // 这是唯一能让「体系」压过「对线」的量，五轴是求和，看不出能不能自洽。
+  analysis.closure = compareComposition(judgeComposition(blue), judgeComposition(red))
   return analysis
 }
 
@@ -342,20 +366,28 @@ function buildSynergyBlock(analysis) {
 
 /** 五轴与逐路对位，把「属性」翻译成「这局谁在哪方面占优」 */
 function buildMatchupBlock(analysis) {
-  if (!analysis?.axes) return { text: '（本次未提供五轴对局模型）', keys: [] }
+  if (!analysis) return { text: '（本次未提供五轴对局模型）', keys: [] }
   const keys = []
-  const lines = [
-    '【五轴对局模型】程序按英雄功能标签计算，0-100 是相对单人满分的五人上限，两侧独立计分，不相加为 100。分值接近时应当明确说「接近」，不要硬造差距。',
-  ]
-  for (const key of ['lane', 'skirmish', 'rotate', 'teamfight', 'siege']) {
-    const item = analysis.axes[key]
-    if (!item) continue
-    const factKey = `axes.${key}`
-    keys.push(factKey)
-    const lead = Math.abs(item.diff) < 6 ? '两队接近' : item.diff > 0 ? `蓝方领先 ${item.diff}` : `红方领先 ${-item.diff}`
-    lines.push(
-      `- [${factKey}] ${AXIS_LABEL[key]}：蓝 ${item.blue} / 红 ${item.red}，${lead}；蓝方主要贡献 ${item.blueDrivers.join('、') || '—'}，红方主要贡献 ${item.redDrivers.join('、') || '—'}`,
-    )
+  const lines = []
+  if (!analysis.axes && !analysis.meta) return { text: '（本次未提供五轴对局模型）', keys: [] }
+
+  if (analysis.axes) {
+    lines.push('【五轴对局模型】程序按英雄功能标签计算，0-100 是相对单人满分的五人上限，两侧独立计分，不相加为 100。分值接近时应当明确说「接近」，不要硬造差距。')
+    for (const key of ['lane', 'skirmish', 'rotate', 'teamfight', 'siege']) {
+      const item = analysis.axes[key]
+      if (!item) continue
+      const factKey = `axes.${key}`
+      keys.push(factKey)
+      const lead = Math.abs(item.diff) < 6 ? '两队接近' : item.diff > 0 ? `蓝方领先 ${item.diff}` : `红方领先 ${-item.diff}`
+      const shape = item.blueShape || item.redShape
+        ? `；团战环节：蓝方 ${item.blueShape?.join('、') || '无突出结构'}，红方 ${item.redShape?.join('、') || '无突出结构'}`
+        : ''
+      lines.push(
+        `- [${factKey}] ${AXIS_LABEL[key]}：蓝 ${item.blue} / 红 ${item.red}，${lead}；蓝方主要贡献 ${item.blueDrivers.join('、') || '—'}，红方主要贡献 ${item.redDrivers.join('、') || '—'}${shape}`,
+      )
+    }
+  } else {
+    lines.push('【五轴对局模型】（本次数据不足，未生成）')
   }
 
   if (analysis.lanes?.length) {
@@ -374,6 +406,50 @@ function buildMatchupBlock(analysis) {
       const why = row.driver.length ? `；依据：${row.driver.join('、')}` : ''
       lines.push(`- [${factKey}] ${row.lane}：${b} vs ${r}，${lead}${why}`)
     })
+  }
+
+  if (analysis.closure) {
+    const { blue, red, gap, hint } = analysis.closure
+    lines.push(
+      '',
+      '【体系闭环度】把团战拆成六个必须成立的环节，逐项判「有 / 没有」，不做加权求和——缺一个环节，其余环节都会打折。这是唯一能把「体系」和「对线」分开看的量。',
+    )
+    for (const [side, team] of [['blue', blue], ['red', red]]) {
+      if (!team) continue
+      const factKey = `closure.${side}`
+      keys.push(factKey)
+      const detail = team.checks.map((check) => `${check.ok ? '✓' : '✗'} ${check.label}（${check.detail}）`).join('；')
+      const missing = team.missing.length ? `；缺口：${team.missing.join('、')}` : '；无缺口'
+      lines.push(`- [${factKey}] ${side === 'blue' ? '蓝方' : '红方'} ${team.passed}/${team.total} 环节成立，${team.tier} 档「${team.tierLabel}」：${detail}${missing}`)
+    }
+    keys.push('closure.hint')
+    lines.push(`- [closure.hint] 体系对比：${hint.text}（通过环节数差 ${Math.abs(gap)}）`)
+  }
+
+  if (analysis.meta) {
+    const { blue, red, diff } = analysis.meta
+    const noSample = (team) => (team.noSample.length
+      ? `未登场 ${team.noSample.length} 人：${team.noSample.join('、')}`
+      : '全员有样本')
+    lines.push(
+      '',
+      '【版本强度】本赛季 KPL 出场次数与胜率的合成分（0-100），出场越多、胜率越高分越高。未登场记「没有样本」，不等于弱——新英雄刚进池子也会是 0 场，不得据此判定英雄强弱。',
+    )
+    for (const [side, team] of [['blue', blue], ['red', red]]) {
+      const factKey = `meta.${side}`
+      keys.push(factKey)
+      const avg = team.avg === null ? '无有效样本' : team.avg
+      lines.push(`- [${factKey}] ${side === 'blue' ? '蓝方' : '红方'}版本强度 ${avg}（有效样本 ${team.knownCount} 人，${noSample(team)}）：${describeMembers(team)}`)
+    }
+    if (diff !== null) {
+      const gap = Math.abs(diff)
+      const side = diff > 0 ? '蓝方' : '红方'
+      const tail = analysis.meta.evenNoSample
+        ? '；双方未登场人数相同，差距不来自缺样本'
+        : '；双方未登场人数不同，解读时须说明这一点'
+      lines.push(`- [meta.diff] 版本层结论：${gap < 10 ? `两队接近（差 ${gap}）` : `${side}版本层占优 ${gap} 分`}${tail}`)
+      keys.push('meta.diff')
+    }
   }
 
   if (analysis.axisNotes?.length) {
@@ -398,6 +474,8 @@ function buildSynergyBasis(analysis) {
     axes: analysis.axes,
     lanes: analysis.lanes,
     axisNotes: analysis.axisNotes,
+    meta: analysis.meta,
+    closure: analysis.closure,
   }
 }
 
@@ -410,6 +488,16 @@ function collectFactKeys(analysis) {
   }
   if (analysis.axes) for (const key of Object.keys(analysis.axes)) keys.add(`axes.${key}`)
   if (analysis.lanes) analysis.lanes.forEach((_, index) => keys.add(`lanes.${index}`))
+  if (analysis.meta) {
+    keys.add('meta.blue')
+    keys.add('meta.red')
+    if (analysis.meta.diff !== null) keys.add('meta.diff')
+  }
+  if (analysis.closure) {
+    keys.add('closure.blue')
+    keys.add('closure.red')
+    keys.add('closure.hint')
+  }
   return keys
 }
 
@@ -607,13 +695,13 @@ app.post('/api/review', async (request, response) => {
       seasonStats: buildStatsBlock(request.body?.currentGame) || '（本次未提供赛季数据）',
     }
 
-    const systemPrompt = `你是一名王者荣耀职业赛事教练与数据分析师，正在复盘一局真实BP。用户消息中，synergy 是程序依据英雄功能标签算出的组合协同与阵容结构，matchup 是五轴对局模型与逐路对位，两者都是确定事实；factKeys 是本轮允许引用的事实编号白名单；seasonStats 是单英雄赛季数据。
+    const systemPrompt = `你是一名王者荣耀职业赛事教练与数据分析师，正在复盘一局真实BP。用户消息中，synergy 是程序依据英雄功能标签算出的组合协同，matchup 包含三块确定事实：五轴对局模型、逐路对位、体系闭环度与版本强度；factKeys 是本轮允许引用的事实编号白名单；seasonStats 是单英雄赛季数据。
 
 复盘必须按对局推进的顺序展开，而不是按属性罗列：
 1. 【线上】用 matchup 的逐路对位逐路说清谁压谁、凭什么（线权、消耗、续航、抗压）。分值差小于 6 就写「接近」，不要硬造差距。
 2. 【小规模团战】2-3 人的控制链与爆发衔接，谁先手、谁跟进，哪一路的 2v2/3v3 更强。
 3. 【支援能力】转线速度与野区联动，谁能在关键节点先到，支援差如何转成资源差。
-4. 【团战优势】开团主动权、前排承伤、保护链、抗控换位、伤害类型与范围，核心在团战里如何被保护或被抓。
+4. 【团战优势】开团主动权、前排承伤、保护链、抗控换位、伤害类型与范围，核心在团战里如何被保护或被抓。体系闭环度的六个环节是这一节的骨架，缺口要写清对手怎么利用。
 5. 【推进能力】清线与点塔的组合，谁掌握兵线节奏、谁能分带牵制、谁必须抱团。
 组合协同与阵容结构是贯穿这五段的解释工具，不是独立的第五节。
 
@@ -624,12 +712,16 @@ app.post('/api/review', async (request, response) => {
 - 引用组合时必须原样使用 synergy 给出的组合名（如「保护链」「封挡接消耗」），不得改名，也不得把两条不同组合合并成一句。
 - 五段分析里至少三段要引用具体数值（例如「中路 19:13」「支援 60:50」），不能只写「占优」「压制」而不给依据。
 - 严禁用「5个英雄胜率谁高」推导胜负结论；seasonStats 只用于校验，引用时必须带场次，少于 15 场须注明样本有限，未登场英雄不得编造数据，该数据不含 Ban 率。
-- synergy 中列出的每一条成型搭配、条件协同与被拆搭配，都必须在 synergyNotes 中各占一条，写清谁因此获得输出或生存环境（impact）、对手应当如何应对（counter）。combo 字段只写英雄名。
+- 【版本强度】版本强度是出场次数与胜率的合成分，衡量「在不在版本里」，不等同于英雄绝对强弱。差 10 分以上才可写「版本层占优」，10 分以内一律写「版本层接近」；版本层占优只影响优先级与容错，不能单独压过线上、团战、推进的分段结论，写的时候要说清是「版本层」而非「强度层」。
+- 未登场英雄（0 场）只能写「本赛季未登场，无样本」，不得据此判定其强弱——新英雄刚进池子同样是 0 场；双方未登场人数相同时，不得把「未登场」本身算作差距。
+- 【体系闭环度】closure 的 passed 是「成立的环节数」，不是分数，差 2 个以上就意味着少两个齿轮，不是手感问题。closure.hint.active 为真时，verdict 必须跟随 hint 给出的倾向：落后一方的线上与推进优势只能写成「局部领先」或「前中期领先」，不得据此判整体优势，也不得用「阵容接近」把差距抹平。缺哪个环节就要写清对手怎么利用它（例如「无保人型，虞姬一露头就被强开」），不能只念缺口名字。
+- verdict 的百分比必须能由 matchups 的分段结论推出来：线上与推进归一方、团战与支援归另一方的局面，不能给出一边倒的数字；反过来，若四条分段结论都指向同一方，就不要为了「均衡」硬给 50/50。
+- synergy 中列出的每一条成型搭配、条件协同与被拆搭配，都必须在 synergyNotes 中各占一条，写清谁因此获得输出或生存环境（impact）、对手应当如何应对（counter）。combo 字段写成「组合名：英雄A + 英雄B」，组合名必须与 synergy 里给出的一致；同一对英雄挂了两条不同组合时，必须分别写清是哪一条。
 - 不得编造 synergy 与 matchup 里不存在的组合、对位或数值；标「无人」的一路不得虚构对位关系。
 - verdict 的百分比只表达主观倾向，不是统计胜率，双方总和必须为100，阵容接近时给50/50。
 
 只输出一个合法JSON对象，不要使用Markdown或代码块，结构如下：
-{"verdict":{"favoredSide":"blue|red|even","blueWinRate":50,"redWinRate":50,"confidence":"低|中|高","summary":"总体判断"},"blue":{"strengths":["优势"],"weaknesses":["短板"],"gameplan":["分阶段打法"],"keyTiming":"关键节奏"},"red":{"strengths":["优势"],"weaknesses":["短板"],"gameplan":["分阶段打法"],"keyTiming":"关键节奏"},"synergyNotes":[{"combo":"英雄A + 英雄B","impact":"这个协同带来了什么","counter":"对手如何应对"}],"matchups":[{"title":"线上/小规模团战/支援/团战/推进 中的一条","analysis":"具体分析","factKeys":["lanes.2","axes.lane"]}],"keyFactors":["决定胜负的因素"]}`
+{"verdict":{"favoredSide":"blue|red|even","blueWinRate":50,"redWinRate":50,"confidence":"低|中|高","summary":"总体判断"},"blue":{"strengths":["优势"],"weaknesses":["短板"],"gameplan":["分阶段打法"],"keyTiming":"关键节奏"},"red":{"strengths":["优势"],"weaknesses":["短板"],"gameplan":["分阶段打法"],"keyTiming":"关键节奏"},"synergyNotes":[{"combo":"组合名：英雄A + 英雄B","impact":"这个协同带来了什么","counter":"对手如何应对"}],"matchups":[{"title":"线上/小规模团战/支援/团战/推进 中的一条","analysis":"具体分析","factKeys":["lanes.2","axes.lane"]}],"keyFactors":["决定胜负的因素"]}`
 
     const deepseekResponse = await fetch(`${baseUrl()}/chat/completions`, {
       method: 'POST',
