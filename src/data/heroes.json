@@ -1493,7 +1493,7 @@
     "avatar": "/heroes/547.jpg",
     "classId": 5,
     "laneIds": [
-      5
+      4
     ],
     "pickGroup": "hero-547"
   },
@@ -1504,7 +1504,7 @@
     "avatar": "/heroes/138.jpg",
     "classId": 2,
     "laneIds": [
-      2
+      3
     ],
     "pickGroup": "hero-138"
   }
