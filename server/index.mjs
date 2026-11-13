@@ -7,7 +7,7 @@ import { createSynergyEngine } from './synergy.mjs'
 import { AXIS_LABEL, createMatchupModel } from './matchup.mjs'
 import { buildDecisionContext, createDraftAdvisor } from './ai-draft.mjs'
 import { createMetaModel, describeMembers } from './meta-strength.mjs'
-import { judgeComposition, compareComposition, metaUsagePolicy } from './composition.mjs'
+import { judgeComposition, compareComposition, metaUsagePolicy, checkVerdictConsistency } from './composition.mjs'
 import { toCandidateView } from './candidate-view.mjs'
 import { DRAFT_STYLES, seededUnit, styleForGame } from '../shared/styles.mjs'
 
@@ -287,7 +287,7 @@ function analyzeSynergy(game, lineups = null) {
   if (metaModel) {
     const meta = metaModel.compare(pickIds('blue'), pickIds('red'))
     const closureGap = analysis.closure ? Math.abs(analysis.closure.gap) : 0
-    analysis.meta = { ...meta, policy: metaUsagePolicy(closureGap) }
+    analysis.meta = { ...meta, policy: metaUsagePolicy(closureGap, meta.sampleReady) }
   }
   return analysis
 }
@@ -467,7 +467,13 @@ function buildMatchupBlock(analysis) {
       const tail = analysis.meta.evenNoSample
         ? '；双方未登场人数相同，差距不来自缺样本'
         : '；双方未登场人数不同，解读时须说明这一点'
-      lines.push(`- [meta.diff] 版本层结论：${gap < 10 ? `两队接近（差 ${gap}）` : `${side}版本层占优 ${gap} 分`}${tail}`)
+      // 样本不足时差值仍是事实，但不能写成「占优」——那等于让一两个人的均分代表全队
+      const conclusion = analysis.meta.sampleReady === false
+        ? `有效样本不足（蓝 ${analysis.meta.blue.knownCount} 人 / 红 ${analysis.meta.red.knownCount} 人，各需至少 ${analysis.meta.minSample} 人），版本层本轮不参与裁决，差 ${gap} 分只作参考`
+        : gap < 10
+          ? `两队接近（差 ${gap}）`
+          : `${side}版本层占优 ${gap} 分`
+      lines.push(`- [meta.diff] 版本层结论：${conclusion}${tail}`)
       keys.push('meta.diff')
     }
     if (analysis.meta.policy) {
@@ -737,7 +743,7 @@ app.post('/api/review', async (request, response) => {
 - 引用组合时必须原样使用 synergy 给出的组合名（如「保护链」「封挡接消耗」），不得改名，也不得把两条不同组合合并成一句。
 - 五段分析里至少三段要引用具体数值（例如「中路 19:13」「支援 60:50」），不能只写「占优」「压制」而不给依据。
 - 严禁用「5个英雄胜率谁高」推导胜负结论；seasonStats 只用于校验，引用时必须带场次，少于 15 场须注明样本有限，未登场英雄不得编造数据，该数据不含 Ban 率。
-- 【版本强度】版本强度是出场次数与胜率的合成分，衡量「在不在版本里」，不等同于英雄绝对强弱。它本质是「哪些英雄进了能赢的阵容」的聚合结果，与体系闭环度量的是同一件事的不同层级。差 10 分以上才可写「版本层占优」，10 分以内一律写「版本层接近」。版本强度的内容只能写进对应一方的 strengths 或 weaknesses 作为背景说明，不得出现在 keyFactors 里；meta.policy.diagnosticOnly 为真时，它更不得改变 verdict 的倾向与百分比，为假时才可作为平手裁决依据。
+- 【版本强度】版本强度是出场次数与胜率的合成分，衡量「在不在版本里」，不等同于英雄绝对强弱。它本质是「哪些英雄进了能赢的阵容」的聚合结果，与体系闭环度量的是同一件事的不同层级。差 10 分以上才可写「版本层占优」，10 分以内一律写「版本层接近」；meta.policy.sampleReady 为假时一律写「样本不足，版本层本轮不参与裁决」，不得写「版本层占优」。版本强度的内容只能写进对应一方的 strengths 或 weaknesses 作为背景说明，不得出现在 keyFactors 里；meta.policy.diagnosticOnly 为真时，它更不得改变 verdict 的倾向与百分比，为假时才可作为平手裁决依据。
 - 【胜利路径】path 判的是「这套阵容靠什么结束游戏」，可执行 = 自己能打且对方解不掉，受制 = 自己能打但对方有对应手段，被封死 = 自身条件不足或对方完全克制。路径条数多于对方不等于赢，但一条可执行路径都没有的一方无法获胜。写推进段与获胜条件时必须引用 path 的具体结论，包括「谁的路被封死了、被对方的什么封死的」；path.hint 给出路径质量对比时，verdict 倾向不得与该对比相反。
 - 未登场英雄（0 场）只能写「本赛季未登场，无样本」，不得据此判定其强弱——新英雄刚进池子同样是 0 场；双方未登场人数相同时，不得把「未登场」本身算作差距。
 - 【体系闭环度】closure 的 passed 是「成立的环节数」，不是分数，差 2 个以上就意味着少两个齿轮，不是手感问题。closure.hint.active 为真时，verdict 必须跟随 hint 给出的倾向：落后一方的线上与推进优势只能写成「局部领先」或「前中期领先」，不得据此判整体优势，也不得用「阵容接近」把差距抹平。缺哪个环节就要写清对手怎么利用它（例如「无保人型，虞姬一露头就被强开」），不能只念缺口名字。
@@ -786,8 +792,11 @@ app.post('/api/review', async (request, response) => {
           ...analysis.red.combos.map((combo) => ({ ...combo, side: 'red' })),
         ]
       : []
+    const review = normalizeReview(parsed, detectedCombos, allowedKeys)
+    // 倾向仍由模型给，这里只比对它有没有违背程序算出的硬结论
+    review.consistency = checkVerdictConsistency(review, analysis?.closure, analysis?.meta)
     return response.json({
-      review: normalizeReview(parsed, detectedCombos, allowedKeys),
+      review,
       model: model(),
       statsBasis: buildStatsBasis(currentGame),
       synergyBasis: buildSynergyBasis(analysis),

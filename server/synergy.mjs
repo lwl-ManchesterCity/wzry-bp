@@ -359,6 +359,9 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
       .filter((item) => item.traits.phase === 'late' && item.traits.mobility <= 1 && item.traits.front === 0)
       .map((item) => item.name)
     const protectors = list.filter((item) => item.traits.peel >= 2).map((item) => item.name)
+    // 强保护单独计数：peel>=2 只说明「会保人」，peel>=3 才是「保得住」。
+    // 单抓路径要区分这两档，否则一个常规辅助就能把整条路判死
+    const strongPeelCount = countAtLeast('peel', 3)
 
     // macro 七维聚合：胜利路径要靠这几个量判断能不能推得动、能不能抓得到
     const macroSum = (key) => (hasMacro ? list.reduce((total, item) => total + (item.macro?.[key] || 0), 0) : null)
@@ -376,6 +379,7 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
       fragileCarry,
       protectors,
       peelCount: countAtLeast('peel', 2),
+      strongPeelCount,
       peelScore: sum('peel'),
       pokeScore: sum('poke'),
       pokeCount: countAtLeast('poke', 2),
@@ -405,7 +409,9 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
 
     if (structure.sample < 5) return findings
 
-    if (structure.front <= 6) {
+    // 边界与 composition.FRONT_MIN 对齐：6 是闭环「承伤点成立」的下限，
+    // 诊断不能在同一个数值上判偏薄，否则同一份事实块里出现两个相反标签
+    if (structure.front < 6) {
       push('weak', '前排承伤偏薄', `全队前排承伤合计 ${structure.front}/15（5人满额），团战缺少能站住的正面支点`)
     } else if (structure.front >= 11) {
       push('strong', '前排厚度充足', `前排承伤合计 ${structure.front}/15，能撑起长时间阵地战`)

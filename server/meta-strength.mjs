@@ -25,6 +25,9 @@ const MAX_GAMES_FLOOR = 20
 const PERF_FLOOR_RATE = 45
 const PERF_SPAN = 20
 
+/** 裁决门槛：双方各需这么多有效样本。3 = 单侧样本数分布的 p25/p50（均值 3.43），不足 3 人的占 18.1% */
+const MIN_SAMPLE = 3
+
 const clamp = (value, low, high) => Math.min(high, Math.max(low, value))
 
 function tierOf(score) {
@@ -101,17 +104,20 @@ export function createMetaModel({ stats, heroes = [] }) {
 
   /**
    * 两侧对比。diff 只在双方都有有效样本时给出，避免一方全无样本时算出一个假差距。
+   * 有样本还不够：均分只算有效样本，一两个人就能代表全队时，这个均分不足以裁决胜负，
+   * 所以另给 sampleReady，不足门槛时 leader 一律 even，差值只作诊断。
    */
   function compare(bluePicks, redPicks) {
     const blue = team(bluePicks)
     const red = team(redPicks)
     const diff = blue.avg !== null && red.avg !== null ? blue.avg - red.avg : null
     const evenNoSample = blue.noSample.length === red.noSample.length
+    const sampleReady = blue.knownCount >= MIN_SAMPLE && red.knownCount >= MIN_SAMPLE
 
     let leader = 'even'
-    if (diff !== null && Math.abs(diff) >= 10) leader = diff > 0 ? 'blue' : 'red'
+    if (sampleReady && diff !== null && Math.abs(diff) >= 10) leader = diff > 0 ? 'blue' : 'red'
 
-    return { blue, red, diff, leader, evenNoSample }
+    return { blue, red, diff, leader, evenNoSample, sampleReady, minSample: MIN_SAMPLE }
   }
 
   return { scoreOf, team, compare, maxGames }

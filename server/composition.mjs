@@ -43,6 +43,8 @@ const WAVECLEAR_BLOCK_MARGIN = 2
 const CONTROL_RESIST_BLOCK_MIN = 8
 /** 对方抗控到这个数，单抓开始吃亏 */
 const CONTROL_RESIST_CONTEST_MIN = 6
+/** 单抓路径：对方保人型到这个人数才封死，单人保护只判受制（2 万组随机 5v5：封死率 42.6%→26.3%） */
+const SPLIT_PEEL_BLOCK_COUNT = 2
 
 const TIERS = [
   { gap: 0, key: 'S', label: '完整体系' },
@@ -205,12 +207,15 @@ export function judgeWinPaths(structure, opponent = null) {
         if (splitters < SPLIT_COUNT_MIN) lacks.push(`仅 ${splitters} 人可绕后（需 ${SPLIT_COUNT_MIN} 人）`)
         if (mobility < SPLIT_MOBILITY_MIN) lacks.push(`机动均值 ${mobility} 低于 ${SPLIT_MOBILITY_MIN}`)
         detail = `自身条件不足：${lacks.join('、')}`
-      } else if (opp && opp.peelCount >= PEEL_MIN) {
+      } else if (opp && ((opp.strongPeelCount || 0) >= 1 || opp.peelCount >= SPLIT_PEEL_BLOCK_COUNT)) {
         status = 'blocked'
         detail = `对方有 ${opp.protectors.join('、')} 保护，抓不死核心反被接住`
       } else if (opp && (opp.controlResist || 0) >= CONTROL_RESIST_BLOCK_MIN) {
         status = 'blocked'
         detail = `对方抗控合计 ${opp.controlResist}，切入会被控住反打`
+      } else if (opp && opp.peelCount >= PEEL_MIN) {
+        status = 'contested'
+        detail = `对方只有 ${opp.protectors.join('、')} 单人保护，抓单要避开被保的核心`
       } else if (opp && (opp.controlResist || 0) >= CONTROL_RESIST_CONTEST_MIN) {
         status = 'contested'
         detail = `对方抗控 ${opp.controlResist} 偏高，抓单要挑软柿子`
@@ -312,16 +317,22 @@ export function judgeComposition(team, opponent = null) {
  * 直接测量已经给出答案，让聚合值反过来改判等于用同一份信息算两遍。
  * 差不足 2 个环节时两者不冲突，版本强度可作为平手裁决依据。
  *
+ * 样本不足时同样只作诊断：均分只算有效样本，一两个人代表全队时它没有裁决资格。
+ *
  * @param {number} closureGap 两侧通过环节数之差（取绝对值）
+ * @param {boolean} sampleReady 双方有效样本是否都达到门槛
  */
-export function metaUsagePolicy(closureGap = 0) {
-  const diagnosticOnly = closureGap >= 2
+export function metaUsagePolicy(closureGap = 0, sampleReady = true) {
+  const diagnosticOnly = closureGap >= 2 || !sampleReady
   return {
     diagnosticOnly,
     closureGap,
-    text: diagnosticOnly
-      ? `体系差 ${closureGap} 个环节，版本强度本轮只作诊断依据：可以写进强弱项说明，但不得据此改变胜负倾向`
-      : '体系差不足 2 个环节，版本强度可作为平手裁决依据参与判断',
+    sampleReady,
+    text: !sampleReady
+      ? '有效样本不足（双方各需至少 3 人），版本强度本轮只作诊断依据：可以写进强弱项说明，但不得据此改变胜负倾向'
+      : diagnosticOnly
+        ? `体系差 ${closureGap} 个环节，版本强度本轮只作诊断依据：可以写进强弱项说明，但不得据此改变胜负倾向`
+        : '体系差不足 2 个环节，版本强度可作为平手裁决依据参与判断',
   }
 }
 
@@ -360,6 +371,62 @@ export function compareComposition(blue, red) {
         : '体系完整度接近，胜负仍由线上、团战与推进的分段结论决定',
     },
   }
+}
+
+const SIDE_NAME = { blue: '蓝方', red: '红方' }
+
+/**
+ * 校验模型的 verdict 有没有违背程序已经算出的结论。
+ *
+ * 倾向与百分比仍由模型给——「谁更可能赢」是解释，不是事实。
+ * 但体系差、路径对比、版本强度的用法是程序算出来的硬结论，
+ * 模型逆着它们写时必须让用户看见，而不是悄悄采信。所以这里只标记，不改数字。
+ *
+ * @param {object} review normalizeReview 之后的复盘（用到 verdict / keyFactors / 双方强弱项）
+ * @param {object|null} closure compareComposition 的结果
+ * @param {object|null} meta 带 policy 的版本强度对比
+ */
+export function checkVerdictConsistency(review, closure = null, meta = null) {
+  const verdict = review?.verdict
+  if (!verdict) return { ok: true, issues: [] }
+  const issues = []
+  const side = verdict.favoredSide
+  const blue = Number(verdict.blueWinRate)
+  const red = Number(verdict.redWinRate)
+  const named = SIDE_NAME[side] || '双方接近'
+
+  if (side === 'blue' && blue < 50) issues.push(`倾向蓝方，百分比却是蓝方 ${blue}%`)
+  if (side === 'red' && blue > 50) issues.push(`倾向红方，百分比却是红方 ${red}%`)
+  if (side === 'even' && blue !== 50) issues.push(`判双方接近，百分比却是 ${blue}:${red}`)
+
+  const hint = closure?.hint
+  if (hint?.active && hint.side && side !== hint.side) {
+    issues.push(`体系差 ${Math.abs(closure.gap)} 个环节应跟随${SIDE_NAME[hint.side]}，模型判的是${named}`)
+  }
+
+  const pathSide = closure?.paths?.side
+  if (pathSide && side !== 'even' && side !== pathSide) {
+    issues.push(`路径质量${SIDE_NAME[pathSide]}更稳，模型倾向却给了${named}`)
+  }
+
+  const factors = (review.keyFactors || []).filter((text) => String(text).includes('版本'))
+  if (factors.length) {
+    issues.push(`版本强度写进了决定胜负的因素（${factors.length} 条），它只允许出现在强弱项说明里`)
+  }
+
+  if (meta?.policy && meta.policy.sampleReady === false) {
+    const texts = [
+      verdict.summary,
+      ...(review.blue?.strengths || []), ...(review.blue?.weaknesses || []),
+      ...(review.red?.strengths || []), ...(review.red?.weaknesses || []),
+      ...(review.keyFactors || []),
+    ]
+    if (texts.some((text) => /版本(层|强度)?占优/.test(String(text)))) {
+      issues.push('有效样本不足，仍写出「版本层占优」')
+    }
+  }
+
+  return { ok: issues.length === 0, issues }
 }
 
 export {

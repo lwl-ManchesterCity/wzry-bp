@@ -104,9 +104,31 @@ describe('两队对比', () => {
     expect(result.red.avg).toBe(74)
     expect(result.diff).toBe(-16)
     expect(result.leader).toBe('red')
+    expect(result.sampleReady).toBe(true)
     expect(result.blue.noSample).toEqual([])
     expect(result.red.noSample).toEqual(['刘禅'])
     expect(result.evenNoSample).toBe(false)
+  })
+
+  it('有效样本不足门槛时不给占优结论，差值只作诊断', () => {
+    // 单侧有效样本人数分布（133 英雄随机抽 5 人，2 万组）：p25=3 / p50=3 / p75=4，均值 3.43，
+    // 不足 3 人的占 18.1%。门槛取 3，即低于中位水平的均分没有裁决资格——
+    // 否则一两个人的分就能代表全队，47.2% 的「版本层占优」里有 36.8% 是这么来的
+    const thin = model.compare([525, 114, 109], [312, 114, 128, 174, 193])
+    expect(thin.blue.knownCount).toBe(1)
+    expect(thin.red.knownCount).toBe(4)
+    expect(thin.minSample).toBe(3)
+    expect(thin.sampleReady).toBe(false)
+    expect(thin.leader).toBe('even')
+    // 差值本身仍是事实，不能因为不够裁决就把它抹成 null
+    expect(thin.diff).not.toBeNull()
+  })
+
+  it('双方各 3 人正好达门槛，可以裁决', () => {
+    const edge = model.compare([525, 581, 545], [312, 128, 174])
+    expect(edge.blue.knownCount).toBe(3)
+    expect(edge.red.knownCount).toBe(3)
+    expect(edge.sampleReady).toBe(true)
   })
 
   it('描述行把分档、场次、胜率写全，未登场英雄单独标注', () => {

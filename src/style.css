@@ -1103,6 +1103,13 @@ h1, h2, h3, h4 { margin: 0; }
 .win-rate-track { height: 5px; display: flex; overflow: hidden; border-radius: 999px; background: var(--red); }
 .win-rate-track i { display: block; height: 100%; background: var(--blue); }
 .verdict-card > p { margin: 14px 0 0; color: #90aff5; font-size: 12px; line-height: 1.8; }
+.verdict-conflict {
+  margin-top: 12px; padding: 9px 12px; border-radius: var(--r-s);
+  border: 1px solid rgba(248, 92, 120, .28); background: rgba(248, 92, 120, .07);
+}
+.verdict-conflict header { display: flex; align-items: center; gap: 6px; color: #ff9fb0; font-size: 10.5px; font-weight: 600; }
+.verdict-conflict ul { margin: 7px 0 0; padding-left: 16px; }
+.verdict-conflict li { color: #d8a7b1; font-size: 11px; line-height: 1.75; }
 
 .synergy-basis {
   margin-top: 12px; padding: 13px 15px 11px;

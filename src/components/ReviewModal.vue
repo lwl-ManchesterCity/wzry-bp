@@ -46,6 +46,8 @@ const favoredText = computed(() => {
     : `${props.snapshot.redName}阵容占优`
 })
 
+const consistencyIssues = computed(() => review.value?.consistency?.issues ?? [])
+
 const teamSections = computed(() => {
   if (!review.value) return []
   return [
@@ -233,6 +235,12 @@ onUnmounted(() => {
               <i :style="{ width: `${review.verdict.blueWinRate}%` }" />
             </div>
             <p>{{ review.verdict.summary }}</p>
+            <div v-if="consistencyIssues.length" class="verdict-conflict">
+              <header><AlertCircle :size="15" />与程序结论不一致 · 倾向仍是模型判断，未作修正</header>
+              <ul>
+                <li v-for="(issue, index) in consistencyIssues" :key="index">{{ issue }}</li>
+              </ul>
+            </div>
           </section>
 
           <section v-if="axisRows.length" class="axis-basis">
@@ -353,7 +361,7 @@ onUnmounted(() => {
 
             <p v-if="metaPolicy" class="meta-policy-line">
               <span class="meta-policy" :class="{ diag: metaPolicy.diagnosticOnly }">
-                {{ metaPolicy.diagnosticOnly ? '本轮仅作诊断' : '可作平手裁决' }}
+                {{ metaPolicy.sampleReady === false ? '样本不足·仅作诊断' : metaPolicy.diagnosticOnly ? '本轮仅作诊断' : '可作平手裁决' }}
               </span>
               {{ metaPolicy.text }}
             </p>

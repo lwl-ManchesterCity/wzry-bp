@@ -92,6 +92,8 @@ export interface DraftReview {
   synergyNotes: SynergyNote[]
   matchups: MatchupReview[]
   keyFactors: string[]
+  /** 模型的倾向是否违背程序算出的硬结论；只标记，不改百分比 */
+  consistency?: { ok: boolean; issues: string[] }
 }
 
 export interface ComboHit {
@@ -124,6 +126,8 @@ export interface TeamStructure {
   fragileCarry: string[]
   protectors: string[]
   peelCount: number
+  /** peel>=3 的强保护人数，单抓路径据此区分「单人保」与「保得住」 */
+  strongPeelCount: number
   peelScore: number
   pokeScore: number
   pokeCount: number
@@ -209,7 +213,10 @@ export interface MetaCompare {
   diff: number | null
   leader: Side | 'even' | null
   evenNoSample: boolean
-  policy?: { diagnosticOnly: boolean; closureGap: number; text: string }
+  /** 双方有效样本是否都达到 minSample；不足时版本层只作诊断，不参与裁决 */
+  sampleReady: boolean
+  minSample: number
+  policy?: { diagnosticOnly: boolean; closureGap: number; sampleReady: boolean; text: string }
 }
 
 export interface StructureFinding {
