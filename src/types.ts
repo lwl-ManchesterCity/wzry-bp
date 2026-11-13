@@ -133,6 +133,83 @@ export interface TeamStructure {
   controlScore: number
   damageMix: { phys: number; magic: number; true: number; mixed: number }
   phaseCount: { early: number; mid: number; late: number }
+  /** 以下七项来自 macro 标注，缺失时为 null（不能拿 0 当真实值） */
+  waveclear?: number | null
+  siege?: number | null
+  lanePressure?: number | null
+  controlResist?: number | null
+  splitters?: string[]
+  splitCount?: number
+}
+
+export type PathStatus = 'open' | 'contested' | 'blocked' | 'unknown'
+
+export interface WinPath {
+  key: 'teamfight' | 'siege' | 'pick'
+  label: string
+  status: PathStatus
+  statusLabel: string
+  detail: string
+}
+
+export interface WinPathSummary {
+  /** 三条路：可执行 2 分、受制 1 分、被封死 0 分 */
+  score: number
+  paths: WinPath[]
+  open: number
+  contested: number
+  blocked: number
+  usable: number
+}
+
+export interface CompositionCheck {
+  key: string
+  label: string
+  ok: boolean
+  detail: string
+}
+
+export interface CompositionJudge {
+  passed: number
+  total: number
+  tier: 'S' | 'A' | 'B' | 'C'
+  tierLabel: string
+  checks: CompositionCheck[]
+  missing: string[]
+  paths?: WinPathSummary | null
+}
+
+export interface CompositionCompare {
+  blue: CompositionJudge
+  red: CompositionJudge
+  gap: number
+  paths?: { blue: WinPathSummary; red: WinPathSummary; gap: number; side: Side | null; text: string } | null
+  hint: { active: boolean; side: Side | null; text: string }
+}
+
+export interface MetaHeroScore {
+  id: number
+  name: string
+  score: number | null
+  tier: string
+  games: number
+  winRate: number | null
+  note: string
+}
+
+export interface MetaTeam {
+  avg: number | null
+  knownCount: number
+  noSample: string[]
+  members: MetaHeroScore[]
+}
+export interface MetaCompare {
+  blue: MetaTeam
+  red: MetaTeam
+  diff: number | null
+  leader: Side | 'even' | null
+  evenNoSample: boolean
+  policy?: { diagnosticOnly: boolean; closureGap: number; text: string }
 }
 
 export interface StructureFinding {
@@ -175,6 +252,8 @@ export interface SynergyBasis {
   axes?: Record<'lane' | 'skirmish' | 'rotate' | 'teamfight' | 'siege', AxisScore> | null
   lanes?: LaneMatchup[] | null
   axisNotes?: string[]
+  meta?: MetaCompare | null
+  closure?: CompositionCompare | null
 }
 
 export interface HeroStatLine {
@@ -195,4 +274,29 @@ export interface StatsBasis {
   fetchedAt: string
   blue: { picks: HeroStatLine[]; bans: HeroStatLine[] }
   red: { picks: HeroStatLine[]; bans: HeroStatLine[] }
+}
+
+/** AI 一手的候选之一，服务端已按整队评分从高到低排序 */
+export interface AiDraftCandidate {
+  heroId: number
+  name: string
+  lane: string
+  score: number
+  reasons: string[]
+  /** 选人时：这一手能凑成的五人阵容 */
+  lineup: string[] | null
+  /** 禁人时：禁掉之后对手最佳整队评分的下降值 */
+  banImpact: number | null
+  /** 禁人时：对手本来能凑成的五人阵容 */
+  banTarget: string[] | null
+}
+
+export interface AiDraftResult {
+  heroId: number
+  heroName: string
+  reason: string
+  engine: 'deepseek' | 'rules'
+  style: { key: string; label: string; summary: string } | null
+  shortlist?: AiDraftCandidate[]
+  error?: string
 }

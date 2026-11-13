@@ -339,7 +339,7 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
 
   function summarizeStructure(picks) {
     const list = picks
-      .map((id) => ({ id: Number(id), name: nameOf(id), traits: traitsOf(synergy, id) }))
+      .map((id) => ({ id: Number(id), name: nameOf(id), traits: traitsOf(synergy, id), macro: macroOf(macro, id) }))
       .filter((item) => item.traits)
     const unknown = picks.filter((id) => !traitsOf(synergy, id)).map(nameOf)
 
@@ -360,6 +360,12 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
       .map((item) => item.name)
     const protectors = list.filter((item) => item.traits.peel >= 2).map((item) => item.name)
 
+    // macro 七维聚合：胜利路径要靠这几个量判断能不能推得动、能不能抓得到
+    const macroSum = (key) => (hasMacro ? list.reduce((total, item) => total + (item.macro?.[key] || 0), 0) : null)
+    const splitters = hasMacro
+      ? list.filter((item) => (item.macro?.flank || 0) >= 2).map((item) => item.name)
+      : []
+
     return {
       sample: list.length,
       unknown,
@@ -379,6 +385,13 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
       controlScore: sum('control'),
       damageMix,
       phaseCount,
+      // macro 缺失时为 null，路径判定据此降级而不是拿 0 当真实值
+      waveclear: macroSum('waveclear'),
+      siege: macroSum('siege'),
+      lanePressure: macroSum('lanePressure'),
+      controlResist: macroSum('controlResist'),
+      splitters,
+      splitCount: splitters.length,
     }
   }
 

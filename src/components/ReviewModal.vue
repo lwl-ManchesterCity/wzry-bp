@@ -9,9 +9,11 @@ import {
   Layers,
   LoaderCircle,
   RefreshCw,
+  Route,
   Shield,
   Sparkles,
   Swords,
+  TrendingUp,
   X,
 } from 'lucide-vue-next'
 import type { DraftReview, SeriesSnapshot, StatsBasis, StructureFinding, SynergyBasis } from '../types'
@@ -98,6 +100,28 @@ const axisRows = computed(() => {
 
 const laneRows = computed(() => synergyBasis.value?.lanes ?? [])
 const axisNotes = computed(() => synergyBasis.value?.axisNotes ?? [])
+
+// 体系闭环度与胜利路径：环节是硬条件，缺口比分数更能说明问题
+const closureBasis = computed(() => synergyBasis.value?.closure ?? null)
+const closureSections = computed(() => {
+  const closure = closureBasis.value
+  if (!closure) return []
+  return [
+    { side: 'blue' as const, name: props.snapshot.blueName, data: closure.blue },
+    { side: 'red' as const, name: props.snapshot.redName, data: closure.red },
+  ]
+})
+
+// 版本强度：与闭环度并列展示，用量（诊断 / 裁决）由服务端策略给出
+const metaPolicy = computed(() => synergyBasis.value?.meta?.policy ?? null)
+const metaSections = computed(() => {
+  const meta = synergyBasis.value?.meta
+  if (!meta) return []
+  return [
+    { side: 'blue' as const, name: props.snapshot.blueName, data: meta.blue },
+    { side: 'red' as const, name: props.snapshot.redName, data: meta.red },
+  ]
+})
 
 async function requestReview() {
   loading.value = true
@@ -250,6 +274,89 @@ onUnmounted(() => {
             <ul v-if="axisNotes.length" class="axis-notes">
               <li v-for="note in axisNotes" :key="note">{{ note }}</li>
             </ul>
+          </section>
+
+          <section v-if="closureSections.length" class="closure-basis">
+            <header class="synergy-head">
+              <h3><Route :size="16" />体系闭环度与胜利路径</h3>
+              <span>七项硬环节 · 有或没有，不做加权</span>
+            </header>
+
+            <div class="closure-rows">
+              <div v-for="team in closureSections" :key="team.side" class="closure-row" :class="team.side">
+                <div class="closure-line">
+                  <span class="closure-team">{{ team.name }}</span>
+                  <b class="closure-count">{{ team.data.passed }}<em>/{{ team.data.total }}</em></b>
+                  <span class="closure-tier" :class="team.data.tier">{{ team.data.tierLabel }}</span>
+                  <span v-if="team.data.missing.length" class="closure-missing">缺 {{ team.data.missing.join('、') }}</span>
+                  <span v-else class="closure-full">无缺口</span>
+                </div>
+                <div class="closure-checks">
+                  <span
+                    v-for="check in team.data.checks"
+                    :key="check.key"
+                    class="closure-chip"
+                    :class="{ ok: check.ok }"
+                    :title="check.detail"
+                  >
+                    <i>{{ check.ok ? '✓' : '✗' }}</i>{{ check.label }}
+                  </span>
+                </div>
+                <div v-if="team.data.paths" class="path-list">
+                  <div v-for="item in team.data.paths.paths" :key="item.key" class="path-row" :class="item.status">
+                    <span class="path-label">{{ item.label }}</span>
+                    <span class="path-status">{{ item.statusLabel }}</span>
+                    <span class="path-detail">{{ item.detail }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="closure-hint" :class="{ active: closureBasis?.hint?.active }">
+              {{ closureBasis?.hint?.text }}
+              <em v-if="closureBasis?.paths">{{ closureBasis.paths.text }}</em>
+            </div>
+          </section>
+
+          <section v-if="metaSections.length" class="meta-basis">
+            <header class="synergy-head">
+              <h3><TrendingUp :size="16" />版本强度</h3>
+              <span>赛季出场 × 胜率合成 0-100 · 未登场不计低分</span>
+            </header>
+
+            <div class="meta-rows">
+              <div v-for="team in metaSections" :key="team.side" class="meta-row" :class="team.side">
+                <div class="meta-line">
+                  <span class="meta-team">{{ team.name }}</span>
+                  <b class="meta-avg">{{ team.data.avg ?? '—' }}</b>
+                  <span class="meta-samples">有效样本 {{ team.data.knownCount }}/5</span>
+                </div>
+                <div class="meta-members">
+                  <span
+                    v-for="hero in team.data.members"
+                    :key="hero.id"
+                    class="meta-chip"
+                    :class="{ none: hero.score === null }"
+                    :title="hero.note"
+                  >
+                    <b>{{ hero.name }}</b>
+                    <template v-if="hero.score !== null">
+                      <em class="meta-tier" :class="hero.tier">{{ hero.tier }}</em>
+                      <span class="meta-score">{{ hero.score }}</span>
+                      <i>{{ hero.games }} 场 · {{ hero.winRate }}%</i>
+                    </template>
+                    <i v-else>未登场</i>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <p v-if="metaPolicy" class="meta-policy-line">
+              <span class="meta-policy" :class="{ diag: metaPolicy.diagnosticOnly }">
+                {{ metaPolicy.diagnosticOnly ? '本轮仅作诊断' : '可作平手裁决' }}
+              </span>
+              {{ metaPolicy.text }}
+            </p>
           </section>
 
           <section v-if="synergySections.length" class="synergy-basis">

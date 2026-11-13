@@ -7,7 +7,8 @@ import { createSynergyEngine } from './synergy.mjs'
 import { AXIS_LABEL, createMatchupModel } from './matchup.mjs'
 import { buildDecisionContext, createDraftAdvisor } from './ai-draft.mjs'
 import { createMetaModel, describeMembers } from './meta-strength.mjs'
-import { judgeComposition, compareComposition } from './composition.mjs'
+import { judgeComposition, compareComposition, metaUsagePolicy } from './composition.mjs'
+import { toCandidateView } from './candidate-view.mjs'
 import { DRAFT_STYLES, seededUnit, styleForGame } from '../shared/styles.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -275,15 +276,19 @@ function analyzeSynergy(game, lineups = null) {
     analysis.axisNotes = matchupModel.axisNotes(analysis.axes)
   }
 
-  // 版本强度与五轴独立：五轴讲「这套阵容怎么打」，版本强度讲「这些英雄在不在版本里」。
-  // 刘禅 0 场这类事实只有放在这里，模型才有依据把「没人用的英雄」算成真实短板。
-  if (metaModel) {
-    analysis.meta = metaModel.compare(pickIds('blue'), pickIds('red'))
-  }
-
-  // 体系闭环度：五个齿轮（扛/开/保/伤害/强势期/+成型协同）咬不咬得上。
+  // 体系闭环度：扛/开/保/伤害/强势期/成型协同/胜利路径，这七件事咬不咬得上。
   // 这是唯一能让「体系」压过「对线」的量，五轴是求和，看不出能不能自洽。
-  analysis.closure = compareComposition(judgeComposition(blue), judgeComposition(red))
+  // 先算它，因为版本强度要不要参与判定，取决于体系差有多大。
+  analysis.closure = compareComposition(judgeComposition(blue, red), judgeComposition(red, blue))
+
+  // 版本强度与五轴独立：五轴讲「这套阵容怎么打」，版本强度讲「这些英雄在不在版本里」。
+  // 但版本强度是「哪些英雄进了能赢的阵容」的聚合代理，和体系量的是同一件事的两个层级：
+  // 体系差到 2 个环节以上时，直接测量已经给出答案，不能让聚合值反过来改判。
+  if (metaModel) {
+    const meta = metaModel.compare(pickIds('blue'), pickIds('red'))
+    const closureGap = analysis.closure ? Math.abs(analysis.closure.gap) : 0
+    analysis.meta = { ...meta, policy: metaUsagePolicy(closureGap) }
+  }
   return analysis
 }
 
@@ -409,10 +414,10 @@ function buildMatchupBlock(analysis) {
   }
 
   if (analysis.closure) {
-    const { blue, red, gap, hint } = analysis.closure
+    const { blue, red, gap, hint, paths } = analysis.closure
     lines.push(
       '',
-      '【体系闭环度】把团战拆成六个必须成立的环节，逐项判「有 / 没有」，不做加权求和——缺一个环节，其余环节都会打折。这是唯一能把「体系」和「对线」分开看的量。',
+      '【体系闭环度】把团战拆成必须成立的环节，逐项判「有 / 没有」，不做加权求和——缺一个环节，其余环节都会打折。这是唯一能把「体系」和「对线」分开看的量。',
     )
     for (const [side, team] of [['blue', blue], ['red', red]]) {
       if (!team) continue
@@ -424,6 +429,21 @@ function buildMatchupBlock(analysis) {
     }
     keys.push('closure.hint')
     lines.push(`- [closure.hint] 体系对比：${hint.text}（通过环节数差 ${Math.abs(gap)}）`)
+
+    if (paths) {
+      lines.push(
+        '',
+        '【胜利路径】三条路（正面团战 / 推进拆塔 / 单抓分带）逐条判「自己走不走得通 + 对方解不解得掉」。可执行 = 自己能打且对方解不掉；受制 = 自己能打但对方有对应手段；被封死 = 自身条件不足或对方完全克制。',
+      )
+      for (const [side, team] of [['blue', paths.blue], ['red', paths.red]]) {
+        const factKey = `path.${side}`
+        keys.push(factKey)
+        const detail = team.paths.map((path) => `${path.label}【${path.statusLabel}】${path.detail}`).join('；')
+        lines.push(`- [${factKey}] ${side === 'blue' ? '蓝方' : '红方'}可执行 ${team.usable} 条、被封死 ${team.blocked} 条：${detail}`)
+      }
+      keys.push('path.hint')
+      lines.push(`- [path.hint] 路径对比：${paths.text}`)
+    }
   }
 
   if (analysis.meta) {
@@ -449,6 +469,10 @@ function buildMatchupBlock(analysis) {
         : '；双方未登场人数不同，解读时须说明这一点'
       lines.push(`- [meta.diff] 版本层结论：${gap < 10 ? `两队接近（差 ${gap}）` : `${side}版本层占优 ${gap} 分`}${tail}`)
       keys.push('meta.diff')
+    }
+    if (analysis.meta.policy) {
+      keys.push('meta.policy')
+      lines.push(`- [meta.policy] 本轮用法：${analysis.meta.policy.text}`)
     }
   }
 
@@ -492,11 +516,17 @@ function collectFactKeys(analysis) {
     keys.add('meta.blue')
     keys.add('meta.red')
     if (analysis.meta.diff !== null) keys.add('meta.diff')
+    if (analysis.meta.policy) keys.add('meta.policy')
   }
   if (analysis.closure) {
     keys.add('closure.blue')
     keys.add('closure.red')
     keys.add('closure.hint')
+    if (analysis.closure.paths) {
+      keys.add('path.blue')
+      keys.add('path.red')
+      keys.add('path.hint')
+    }
   }
   return keys
 }
@@ -506,14 +536,9 @@ const advisor = synergyEngine
   ? createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine, synergy: synergyRaw, macro: macroRaw })
   : null
 
-const slimCandidates = (candidates) =>
-  candidates.map((item) => ({
-    heroId: item.id,
-    name: item.name,
-    lane: item.lane,
-    score: Math.round(item.score),
-    reasons: item.reasons,
-  }))
+// 交给界面的候选池：按整队评分从高到低排，附「凑成哪套五人」或「禁掉对手损失多少」。
+// 模型实际选中的那个由前端按 heroId 高亮，界面就能看出它是在哪几个里挑的、让了多少分。
+const slimCandidates = toCandidateView
 
 app.post('/api/ai-draft', async (request, response) => {
   try {
@@ -695,24 +720,25 @@ app.post('/api/review', async (request, response) => {
       seasonStats: buildStatsBlock(request.body?.currentGame) || '（本次未提供赛季数据）',
     }
 
-    const systemPrompt = `你是一名王者荣耀职业赛事教练与数据分析师，正在复盘一局真实BP。用户消息中，synergy 是程序依据英雄功能标签算出的组合协同，matchup 包含三块确定事实：五轴对局模型、逐路对位、体系闭环度与版本强度；factKeys 是本轮允许引用的事实编号白名单；seasonStats 是单英雄赛季数据。
+    const systemPrompt = `你是一名王者荣耀职业赛事教练与数据分析师，正在复盘一局真实BP。用户消息中，synergy 是程序依据英雄功能标签算出的组合协同，matchup 包含四块确定事实：五轴对局模型、逐路对位、体系闭环度与胜利路径、版本强度；factKeys 是本轮允许引用的事实编号白名单；seasonStats 是单英雄赛季数据。
 
 复盘必须按对局推进的顺序展开，而不是按属性罗列：
 1. 【线上】用 matchup 的逐路对位逐路说清谁压谁、凭什么（线权、消耗、续航、抗压）。分值差小于 6 就写「接近」，不要硬造差距。
 2. 【小规模团战】2-3 人的控制链与爆发衔接，谁先手、谁跟进，哪一路的 2v2/3v3 更强。
 3. 【支援能力】转线速度与野区联动，谁能在关键节点先到，支援差如何转成资源差。
-4. 【团战优势】开团主动权、前排承伤、保护链、抗控换位、伤害类型与范围，核心在团战里如何被保护或被抓。体系闭环度的六个环节是这一节的骨架，缺口要写清对手怎么利用。
-5. 【推进能力】清线与点塔的组合，谁掌握兵线节奏、谁能分带牵制、谁必须抱团。
+4. 【团战优势】开团主动权、前排承伤、保护链、抗控换位、伤害类型与范围，核心在团战里如何被保护或被抓。体系闭环度的七项里，前六项是这一节的骨架，缺口要写清对手怎么利用。
+5. 【推进能力】清线与点塔的组合，谁掌握兵线节奏、谁能分带牵制、谁必须抱团。path 里推进与单抓两条路的执行状态是这一节的骨架。
 组合协同与阵容结构是贯穿这五段的解释工具，不是独立的第五节。
 
 硬性要求：
 - 每一条 matchups 必须给出 factKeys，取值只能来自 factKeys 白名单，且必须真实支撑该条结论；找不到对应事实的判断不要写进 matchups。
-- 正文里不要出现 lanes.2、axes.lane 这类编号字符串，编号只放在 factKeys 字段；正文用人类可读的写法，例如「中路 19:13」。事实编号由前端负责展示。
+- 正文里不要出现 lanes.2、axes.lane、closure.hint、path.blue、meta.policy 这类内部编号，包括 keyFactors 与 strengths/weaknesses；编号只放在 factKeys 字段。要表达同样的意思就换成人类可读的说法，例如「中路 19:13」「蓝方推进路径被封死」「版本层本轮只作参考」。
 - matchups 最多 6 条：逐路对位最多占 2 条（多路可合并写），必须为团战与推进各保留至少一条，不能只写线上。
 - 引用组合时必须原样使用 synergy 给出的组合名（如「保护链」「封挡接消耗」），不得改名，也不得把两条不同组合合并成一句。
 - 五段分析里至少三段要引用具体数值（例如「中路 19:13」「支援 60:50」），不能只写「占优」「压制」而不给依据。
 - 严禁用「5个英雄胜率谁高」推导胜负结论；seasonStats 只用于校验，引用时必须带场次，少于 15 场须注明样本有限，未登场英雄不得编造数据，该数据不含 Ban 率。
-- 【版本强度】版本强度是出场次数与胜率的合成分，衡量「在不在版本里」，不等同于英雄绝对强弱。差 10 分以上才可写「版本层占优」，10 分以内一律写「版本层接近」；版本层占优只影响优先级与容错，不能单独压过线上、团战、推进的分段结论，写的时候要说清是「版本层」而非「强度层」。
+- 【版本强度】版本强度是出场次数与胜率的合成分，衡量「在不在版本里」，不等同于英雄绝对强弱。它本质是「哪些英雄进了能赢的阵容」的聚合结果，与体系闭环度量的是同一件事的不同层级。差 10 分以上才可写「版本层占优」，10 分以内一律写「版本层接近」。版本强度的内容只能写进对应一方的 strengths 或 weaknesses 作为背景说明，不得出现在 keyFactors 里；meta.policy.diagnosticOnly 为真时，它更不得改变 verdict 的倾向与百分比，为假时才可作为平手裁决依据。
+- 【胜利路径】path 判的是「这套阵容靠什么结束游戏」，可执行 = 自己能打且对方解不掉，受制 = 自己能打但对方有对应手段，被封死 = 自身条件不足或对方完全克制。路径条数多于对方不等于赢，但一条可执行路径都没有的一方无法获胜。写推进段与获胜条件时必须引用 path 的具体结论，包括「谁的路被封死了、被对方的什么封死的」；path.hint 给出路径质量对比时，verdict 倾向不得与该对比相反。
 - 未登场英雄（0 场）只能写「本赛季未登场，无样本」，不得据此判定其强弱——新英雄刚进池子同样是 0 场；双方未登场人数相同时，不得把「未登场」本身算作差距。
 - 【体系闭环度】closure 的 passed 是「成立的环节数」，不是分数，差 2 个以上就意味着少两个齿轮，不是手感问题。closure.hint.active 为真时，verdict 必须跟随 hint 给出的倾向：落后一方的线上与推进优势只能写成「局部领先」或「前中期领先」，不得据此判整体优势，也不得用「阵容接近」把差距抹平。缺哪个环节就要写清对手怎么利用它（例如「无保人型，虞姬一露头就被强开」），不能只念缺口名字。
 - verdict 的百分比必须能由 matchups 的分段结论推出来：线上与推进归一方、团战与支援归另一方的局面，不能给出一边倒的数字；反过来，若四条分段结论都指向同一方，就不要为了「均衡」硬给 50/50。
