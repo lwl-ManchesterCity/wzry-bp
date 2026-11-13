@@ -69,20 +69,20 @@ function completeDraft(game: Game, settings = globalSettings, previousGames: Gam
 }
 
 describe('KPL 征召顺序', () => {
-  it('2026 规则为 5 Ban（3+2）与 5 Pick', () => {
+  it('2026 规则为 5 Ban（2+3）与 5 Pick', () => {
     const steps = getSteps('kpl2026')
     expect(steps).toHaveLength(20)
     expect(steps.filter((step) => step.side === 'blue' && step.type === 'ban')).toHaveLength(5)
     expect(steps.filter((step) => step.side === 'red' && step.type === 'ban')).toHaveLength(5)
     expect(steps.filter((step) => step.type === 'pick')).toHaveLength(10)
-    // 阶段一：双方各禁 3 个，蓝红交替
-    expect(steps.slice(0, 6).map((step) => step.side)).toEqual(['blue', 'red', 'blue', 'red', 'blue', 'red'])
-    expect(steps.slice(0, 6).every((step) => step.type === 'ban')).toBe(true)
+    // 阶段一：双方各禁 2 个，蓝红交替
+    expect(steps.slice(0, 4).map((step) => step.side)).toEqual(['blue', 'red', 'blue', 'red'])
+    expect(steps.slice(0, 4).every((step) => step.type === 'ban')).toBe(true)
     // 阶段二：6 个 Pick
-    expect(steps.slice(6, 12).every((step) => step.type === 'pick')).toBe(true)
-    // 阶段三：双方各禁 2 个，红蓝交替
-    expect(steps.slice(12, 16).map((step) => step.side)).toEqual(['red', 'blue', 'red', 'blue'])
-    expect(steps.slice(12, 16).every((step) => step.type === 'ban')).toBe(true)
+    expect(steps.slice(4, 10).every((step) => step.type === 'pick')).toBe(true)
+    // 阶段三：双方各禁 3 个，红蓝交替
+    expect(steps.slice(10, 16).map((step) => step.side)).toEqual(['red', 'blue', 'red', 'blue', 'red', 'blue'])
+    expect(steps.slice(10, 16).every((step) => step.type === 'ban')).toBe(true)
     // 阶段四：4 个 Pick
     expect(steps.slice(16).map((step) => step.side)).toEqual(['red', 'blue', 'blue', 'red'])
   })

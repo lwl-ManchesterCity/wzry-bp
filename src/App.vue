@@ -165,7 +165,7 @@ const phaseLabel = computed(() => {
 
 const phaseMeta = computed(() => {
   if (currentGame.value.isPeak) return 'FREE PICK'
-  return settings.ruleset === 'kpl2026' ? '5 BAN · 3+2' : '4 BAN · 2+2'
+  return settings.ruleset === 'kpl2026' ? '5 BAN · 2+3' : '4 BAN · 2+2'
 })
 
 const stages = computed(() => {

@@ -11,7 +11,7 @@ page.on('pageerror', (error) => errors.push(error.message))
 page.on('response', (res) => { if (res.status() >= 400) console.log('HTTP', res.status(), res.url()) })
 
 try {
-  await page.goto('http://127.0.0.1:5175/', { waitUntil: 'networkidle' })
+  await page.goto('http://127.0.0.1:5190/', { waitUntil: 'networkidle' })
   await page.locator('.start-draft').click()
   await page.locator('.hero-card').first().waitFor()
 

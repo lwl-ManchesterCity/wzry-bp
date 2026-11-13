@@ -10,7 +10,7 @@ const pageErrors = []
 page.on('pageerror', (error) => pageErrors.push(error.message))
 
 try {
-  await page.goto(process.env.APP_URL || 'http://127.0.0.1:5175/', { waitUntil: 'networkidle' })
+  await page.goto(process.env.APP_URL || 'http://127.0.0.1:5190/', { waitUntil: 'networkidle' })
   // 先过开场页：对局方式、模式、赛制都在这里定
   await page.locator('.setup-screen').waitFor()
   const opponentCards = await page.locator('.opponent-card').count()

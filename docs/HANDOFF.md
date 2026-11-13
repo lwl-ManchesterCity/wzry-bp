@@ -23,7 +23,7 @@
 ```bash
 cd /Users/lwl/Documents/wzry-bp
 npm install          # node_modules 已就绪，通常不用重装
-npm run dev          # 同时起 vite(5173) 和 API(3001)
+npm run dev          # 同时起 vite(5190) 和 API(3001)
 npm test             # 112 项单元测试，约 2 秒
 npm run build        # vue-tsc -b && vite build，含类型检查
 ```
@@ -43,7 +43,7 @@ npm run build        # vue-tsc -b && vite build，含类型检查
 
 **改任何东西之前先记住这两条命令。改完必须都绿，绿了才算完。**
 
-开发服务此刻正在 5173 / 3001 上跑着；如果你要动端口或重启，先 `lsof -nP -iTCP:5173 -sTCP:LISTEN` 看清是谁占着。
+开发服务固定跑在 **5190 / 3001**（`vite.config.ts` 里 `port: 5190, strictPort: true`）。本机端口归属：5173=分类分级项目、5188=nba-draft、5174=3D街道、5178=xd-vuln-shield，**都不要占**；wzry-bp 不再用 vite 默认口。如果你要动端口或重启，先 `lsof -nP -iTCP:5190 -sTCP:LISTEN` 看清是谁占着。
 
 ---
 

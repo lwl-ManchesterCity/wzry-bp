@@ -22,7 +22,7 @@ const formatOptions = [
   { value: 7, label: 'BO7', hint: '七局四胜 · 含巅峰对决' },
 ]
 const rulesetOptions = [
-  { value: 'kpl2026', label: 'KPL 2026', hint: '每方 5 Ban · 3 + 2' },
+  { value: 'kpl2026', label: 'KPL 2026', hint: '每方 5 Ban · 2 + 3' },
   { value: 'classic', label: '经典征召', hint: '每方 4 Ban · 2 + 2' },
 ]
 

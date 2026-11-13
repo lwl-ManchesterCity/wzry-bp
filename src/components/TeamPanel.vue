@@ -25,8 +25,8 @@ const emit = defineEmits<{
 
 const pickSlots = computed(() => Array.from({ length: 5 }, (_, index) => props.picks[index] ?? null))
 const banSlots = computed(() => Array.from({ length: props.banCount }, (_, index) => props.bans[index] ?? null))
-/** 5 Ban 规则为阶段一 3 个 + 阶段二 2 个；4 Ban 规则为 2 + 2 */
-const banSplit = computed(() => (props.banCount === 5 ? 3 : 2))
+/** 两套规则阶段一都是每队 2 个禁用：KPL 2026 为 2 + 3，经典为 2 + 2 */
+const banSplit = 2
 const sideLabel = computed(() => props.side === 'blue' ? 'BLUE SIDE' : 'RED SIDE')
 const laneCoverage = computed(() => {
   const covered = new Set(props.picks.flatMap((hero) => hero.laneIds))

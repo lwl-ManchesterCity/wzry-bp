@@ -10,10 +10,8 @@ import type {
   Side,
 } from '../types'
 
-/** 5 Ban 征召（KPL 2026）：阶段一每队 3 个禁用，蓝→红交替 */
+/** 5 Ban 征召（KPL 2026）：阶段一每队 2 个禁用，蓝→红交替 */
 const kplFirstBans: DraftStep[] = [
-  { side: 'blue', type: 'ban' },
-  { side: 'red', type: 'ban' },
   { side: 'blue', type: 'ban' },
   { side: 'red', type: 'ban' },
   { side: 'blue', type: 'ban' },
@@ -37,8 +35,18 @@ const firstPicks: DraftStep[] = [
   { side: 'red', type: 'pick' },
 ]
 
-/** 阶段二禁用：两套规则均为每队 2 个，红→蓝交替 */
-const secondBans: DraftStep[] = [
+/** 阶段二禁用（KPL 2026）：每队 3 个，红→蓝交替 */
+const kplSecondBans: DraftStep[] = [
+  { side: 'red', type: 'ban' },
+  { side: 'blue', type: 'ban' },
+  { side: 'red', type: 'ban' },
+  { side: 'blue', type: 'ban' },
+  { side: 'red', type: 'ban' },
+  { side: 'blue', type: 'ban' },
+]
+
+/** 阶段二禁用（经典）：每队 2 个，红→蓝交替 */
+const classicSecondBans: DraftStep[] = [
   { side: 'red', type: 'ban' },
   { side: 'blue', type: 'ban' },
   { side: 'red', type: 'ban' },
@@ -56,7 +64,7 @@ export function getSteps(ruleset: RuleSet): DraftStep[] {
   return [
     ...(ruleset === 'kpl2026' ? kplFirstBans : classicFirstBans),
     ...firstPicks,
-    ...secondBans,
+    ...(ruleset === 'kpl2026' ? kplSecondBans : classicSecondBans),
     ...finalPicks,
   ]
 }
