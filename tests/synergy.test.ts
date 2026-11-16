@@ -78,6 +78,25 @@ describe('组合协同检测', () => {
   })
 })
 
+describe('机制推导组合（需 macro）', () => {
+  const macro = JSON.parse(readFileSync(path.join(root, 'src/data/hero-macro.json'), 'utf8'))
+  const macroEngine = createSynergyEngine({ synergy, heroes, macro })
+  const idOf = (name: string) => heroes.find((hero) => hero.name === name)!.id
+
+  it('元流之子(辅助) + 狄仁杰 识别为掩护推进（保推进缝）', () => {
+    const combos = macroEngine.analyzeTeam([idOf('元流之子(辅助)'), idOf('狄仁杰')], []).combos
+    const push = combos.find((combo) => combo.name === '掩护推进')
+    expect(push).toBeTruthy()
+    expect(push!.kind).toBe('push')
+    expect(push!.heroes).toEqual(['元流之子(辅助)', '狄仁杰'])
+  })
+
+  it('peel>=3 的封挡位不重复推掩护推进，避免同一对叠两张卡', () => {
+    const combos = macroEngine.analyzeTeam([idOf('盾山'), idOf('狄仁杰')], []).combos
+    expect(combos.some((combo) => combo.name === '掩护推进')).toBe(false)
+  })
+})
+
 describe('组合被禁用拆断', () => {
   it('鲁班在场但盾山被对方 Ban 掉时，报告保护链被拆', () => {
     const result = engine.analyzeTeam([ID.luban, ID.caowenji, ID.simazhen, ID.jing, ID.wuzetian], [ID.dunshan])

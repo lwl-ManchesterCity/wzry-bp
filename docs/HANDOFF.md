@@ -1,7 +1,7 @@
 # wzry-bp 交接说明（给接手的 agent）
 
 > 目的：你读完就能独立开工，不需要回头问原作者。
-> 结论先给：**项目已迁到新路径，HEAD 与远端同步，112 项测试全绿。工作区有一批 2026-11-13 的未提交口径修正（见第 2 节），等原作者确认后才提交；其余可以直接从第 8 节挑活干。**
+> 结论先给：**项目已迁到新路径，HEAD 与远端同步，118 项测试全绿。工作区有一批未提交的人机撤销修复与文档同步（见第 2 节），等原作者确认后才提交；其余可以直接从第 8 节挑活干。**
 
 ---
 
@@ -13,7 +13,7 @@
 |---|---|
 | 位置 | `/Users/lwl/Documents/wzry-bp`（目录名就叫 wzry-bp，代码直接铺在根目录） |
 | 仓库 | `https://github.com/lwl-ManchesterCity/wzry-bp.git`，分支 `main` |
-| 当前 HEAD | `d25bf9e`，与 `origin/main` 同步；工作区有未提交改动，见第 2 节 |
+| 当前 HEAD | `9ff233d`，与 `origin/main` 同步；工作区有未提交改动，见第 2 节 |
 | 技术栈 | Vue 3 + TS + Vite（前端）／Express（`server/`）／Vitest |
 | Node | 需要 ≥ 22.9（启动用了 `--env-file-if-exists`），本机 `v22.22.2` |
 | 规模 | 202 个 git 跟踪文件，源码约 6600 行（不含测试）／7900 行（含测试），133 英雄 + 133 头像 |
@@ -24,7 +24,7 @@
 cd /Users/lwl/Documents/wzry-bp
 npm install          # node_modules 已就绪，通常不用重装
 npm run dev          # 同时起 vite(5190) 和 API(3001)
-npm test             # 112 项单元测试，约 2 秒
+npm test             # 118 项单元测试，约 2 秒
 npm run build        # vue-tsc -b && vite build，含类型检查
 ```
 
@@ -38,8 +38,8 @@ npm run build        # vue-tsc -b && vite build，含类型检查
 
 ## 2. 当前状态：先看这一节
 
-- `d25bf9e` 已推送，但工作区**不干净**：2026-11-13 的四项口径修正（front 诊断边界、单抓保护两档、版本样本门槛、verdict 一致性标记）与文档同步尚未提交，另含经确认删除的 `docs/NBA-DRAFT-HANDOFF.md`（他项目文档）。等原作者确认后才 commit。
-- 基线是绿的（我 2026-11-13 15:17 实跑，不是沿用旧结论）：`npm test` → **10 个测试文件、112 项全过**；`npm run build` → 通过。
+- `b533ed1`（四项口径修正 + 删除 `docs/NBA-DRAFT-HANDOFF.md`）与 `9ff233d`（KPL 2026 禁用分段 2+3、dev 端口固定 5190）已推送，HEAD 与 `origin/main` 一致。工作区**不干净**：人机撤销修复（`src/composables/useDraft.ts`、`src/App.vue`、新增 `tests/use-draft-undo.test.ts`）、README/HANDOFF 文档同步、README 五张截图重拍，均未提交，等原作者确认后才 commit。
+- 基线是绿的（我 2026-11-13 17:29 实跑，不是沿用旧结论）：`npm test` → **11 个测试文件、118 项全过**；`npm run build` → 通过。
 
 **改任何东西之前先记住这两条命令。改完必须都绿，绿了才算完。**
 
@@ -177,14 +177,14 @@ src/               前端
 
 ---
 
-## 9. 一个陷阱：`docs/` 里混进了别的项目的文件
+## 9. `docs/` 的构成
 
-`docs/NBA-DRAFT-HANDOFF.md` 是**另一个项目**（NBA 选秀模拟器）的交接文档，跟本项目无关，被误提交进来了。**不要读它，也不要照着它改任何东西。** 顺手删掉是个好主意，但先问一句。
+`docs/NBA-DRAFT-HANDOFF.md`（别项目交接文档，误提交）已在 `b533ed1` 经确认删除；旧提交或旧记忆里若再提到它，一律当历史处理。
 
-`docs/` 下另外 5 个 `.jpg` 是 README 的实拍截图（setup/draft/lineup/review/complete），**要留**。
+`docs/` 下另外 5 个 `.jpg` 是 README 实拍截图，**要留**：setup 开场 / draft BP 界面 / complete 完成页 / lineup 分路排布 / review 复盘弹窗。complete 与 review 的内容曾与图注互换，2026-11-13 重拍时已归位，别再换回去。
 
 ---
 
 ## 10. 一句话总结
 
-**这是个「数据口径比代码结构重要」的项目。** 代码量不大，但每个阈值后面都有一局真实复盘的争论。你要改的是口径和展示，不是架构。动手前跑 `npm test` 确认 112 项绿，动手后跑同样的命令确认还是绿的。
+**这是个「数据口径比代码结构重要」的项目。** 代码量不大，但每个阈值后面都有一局真实复盘的争论。你要改的是口径和展示，不是架构。动手前跑 `npm test` 确认 118 项绿，动手后跑同样的命令确认还是绿的。

@@ -371,7 +371,8 @@ export function createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine, s
       if (mode === 'ban' && myPicks.length) {
         adjusted -= evaluate(result.id, myPicks, 'pick', { style }).score * 0.55
       }
-      if (avoidSet.has(Number(result.id))) adjusted -= mode === 'ban' ? 4 : 14
+      // 26≈补位候选第1/2名 adjusted 分差的 p90：planPicks 后是整队尺度，14 翻不过鬼谷子这类约25分的领先
+      if (avoidSet.has(Number(result.id))) adjusted -= mode === 'ban' ? 4 : 26
       return { ...result, base: Math.round(result.base ?? result.score), adjusted }
     })
     scored.sort((a, b) => b.adjusted - a.adjusted)

@@ -56,6 +56,34 @@ describe('BO1 整队候选生成', () => {
     expect(pickoff.metrics.macros.flank).toBeGreaterThanOrEqual(6)
     expect(new Set([engage, protect, siege, pickoff].map((plan) => plan.picks.join('+'))).size).toBe(4)
   })
+
+  it('已选同主路两人时整队规划不熄火，仍按阵容结构补齐而非退回个体评分', () => {
+    const idOf = (name: string) => heroes.find((hero) => hero.name === name)!.id
+    const fixed = [idOf('盾山'), idOf('蔡文姬')]
+    expect(new Set(fixed.map(advisor.laneOf)).size).toBe(1)
+    const available = allIds.filter((id) => !fixed.includes(id))
+    const plans = advisor.buildLineups!(fixed, available, { style: style('meta'), seed: 'lane-conflict' })
+    expect(plans.length).toBeGreaterThan(0)
+    for (const plan of plans) {
+      expect(plan.picks).toHaveLength(5)
+      expect(plan.picks).toContain(fixed[0])
+      expect(plan.picks).toContain(fixed[1])
+    }
+    const ranked = advisor.rank({
+      teamPicks: fixed, available, myPicks: fixed, oppPicks: [],
+      limit: 3, mode: 'pick', style: style('meta'), seed: 'lane-conflict', step: 8,
+    })
+    expect(ranked[0].plan).toBeTruthy()
+  })
+
+  it('剪枝初筛纳入协同潜力后，放宽 perLane 不再显著更优（强协同拼图不被砍掉）', () => {
+    const engage = style('engage')
+    const narrow = advisor.buildLineups!([], allIds, { style: engage, seed: 's3', perLane: 8 })[0]
+    const wide = advisor.buildLineups!([], allIds, { style: engage, seed: 's3', perLane: 24 })[0]
+    // 修复前 narrow 比 wide 低约 22 分（大乔/鬼谷子等高协同英雄被单卡强度剪掉）；
+    // 修复后差距收敛到个位数。阈值 5 取自实测：修复前 22.3、修复后 1.9。
+    expect(wide.score - narrow.score).toBeLessThan(5)
+  })
 })
 
 describe('完整阵容价值映射回当前一手', () => {
@@ -125,5 +153,30 @@ describe('Ban 按对手整队损失计算', () => {
     const second = advisor.rank(args)
     expect(first.map((item) => item.id)).toEqual(second.map((item) => item.id))
     expect(first.map((item) => item.banImpact)).toEqual(second.map((item) => item.banImpact))
+  })
+
+  it('对方某路已满员时，不去禁那一路的强英雄（禁了也拆不动阵容）', () => {
+    const idOf = (name: string) => heroes.find((hero) => hero.name === name)!.id
+    const oppPicks = [idOf('盾山'), idOf('艾琳'), idOf('沈梦溪')]
+    const occupied = new Set(oppPicks.map(advisor.laneOf))
+    const ranked = advisor.rank({
+      teamPicks: oppPicks,
+      available: allIds.filter((id) => !oppPicks.includes(id)),
+      myPicks: [],
+      oppPicks,
+      limit: 8,
+      mode: 'ban',
+      style: style('meta'),
+      seed: 'lane-blocked-ban',
+      step: 13,
+    })
+
+    expect(occupied.has(ranked[0].lane)).toBe(false)
+    expect(ranked.every((item) => !occupied.has(item.lane))).toBe(true)
+    const cai = ranked.find((item) => item.id === idOf('蔡文姬'))
+    if (cai) {
+      expect(cai.banImpact).toBe(0)
+      expect(ranked[0].id).not.toBe(cai.id)
+    }
   })
 })

@@ -252,6 +252,19 @@ export interface LaneMatchup {
   driver: string[]
 }
 
+export interface RadarAxis {
+  key: string
+  blueRaw: number
+  redRaw: number
+  bluePct: number
+  redPct: number
+}
+
+export interface RadarBasis {
+  corpusSize: number
+  axes: RadarAxis[]
+}
+
 export interface SynergyBasis {
   blue: TeamSynergy
   red: TeamSynergy
@@ -261,6 +274,7 @@ export interface SynergyBasis {
   axisNotes?: string[]
   meta?: MetaCompare | null
   closure?: CompositionCompare | null
+  radar?: RadarBasis | null
 }
 
 export interface HeroStatLine {

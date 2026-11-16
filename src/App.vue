@@ -264,6 +264,13 @@ function backToSetup() {
   screen.value = 'lobby'
 }
 
+function handleUndo() {
+  undo()
+  aiNote.value = ''
+  aiShortlist.value = []
+  aiChosenId.value = 0
+}
+
 async function runAiTurn() {
   if (!aiTurn.value || aiThinking.value) return
   const token = (aiToken += 1)
@@ -319,7 +326,15 @@ async function runAiTurn() {
       // 超时兜底不是 AI 的判断，候选池一并清掉，免得把上一次的依据挂在这一次头上
       aiShortlist.value = []
       aiChosenId.value = 0
-      const fallback = heroes.find((hero) => !unavailableReasons.value[hero.id])
+      const availableHeroes = heroes.filter((hero) => !unavailableReasons.value[hero.id])
+      let pool = availableHeroes
+      if (type === 'pick') {
+        // 选人兜底优先补我方缺的路，别按数据库顺序送第一个英雄
+        const aiLanes = new Set(sidePicks(aiSide.value).map((id) => heroMap.get(id)?.laneIds?.[0]))
+        const fillsGap = availableHeroes.filter((hero) => hero.laneIds?.[0] != null && !aiLanes.has(hero.laneIds[0]))
+        if (fillsGap.length) pool = fillsGap
+      }
+      const fallback = pool[Math.floor(Math.random() * pool.length)]
       if (fallback) {
         confirmHero(fallback.id)
         advanced = currentGame.value.actions.length > expected
@@ -454,7 +469,7 @@ onMounted(async () => {
           </div>
           <span v-if="!complete" class="phase-type-pill">{{ phaseMeta }}</span>
           <div class="phase-actions">
-            <button :disabled="!currentGame.actions.length" title="撤销上一步" @click="undo"><ChevronLeft :size="16" />撤销</button>
+            <button :disabled="!currentGame.actions.length" title="撤销上一步" @click="handleUndo"><ChevronLeft :size="16" />撤销</button>
             <button :disabled="!currentGame.actions.length" title="重置当前小局" @click="resetCurrentGame"><RotateCcw :size="15" />重开本局</button>
           </div>
         </header>

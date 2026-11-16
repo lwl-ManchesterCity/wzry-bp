@@ -42,6 +42,18 @@ export function createTeamPlanner({
 }) {
   const nameOf = (id) => heroMap.get(Number(id))?.name || `英雄${id}`
 
+  // 每个英雄参与的强组合数：剪枝初筛若只看单卡强度，会把大乔/鬼谷子这类
+  // 强度低但能促成多条强协同的拼图砍掉。权重 2 ≈ 强度IQR(12.3)/最大强组合数(6)，
+  // 让满协同英雄获得约一个强度IQR的加成，足以浮出强度底部，又不压倒真实强度差。
+  const strongComboDegree = new Map()
+  for (const combo of synergy?.combos || []) {
+    if (combo.tier !== 'strong') continue
+    for (const id of combo.ids || []) {
+      const key = Number(id)
+      strongComboDegree.set(key, (strongComboDegree.get(key) || 0) + 1)
+    }
+  }
+
   function metricsOf(picks) {
     const analysis = synergyEngine.analyzeTeam(picks, [])
     const macros = {
@@ -229,7 +241,9 @@ export function createTeamPlanner({
     const pool = uniqueIds(available).filter((id) => !fixedSet.has(id) && heroMap.has(id))
     if (fixed.length + pool.length < 5) return []
     const fixedLanes = fixed.map(laneOf).filter(Boolean)
-    if (new Set(fixedLanes).size !== fixedLanes.length) return []
+    // 人类可能选了同主路两人（手动排布前的常态）：不再直接放弃整队规划，
+    // 改为「能覆盖几路就覆盖几路」继续推演，避免 AI 退回纯个体评分。
+    const targetLanes = Math.min(5, new Set(fixedLanes).size + (5 - fixed.length))
 
     const byLane = new Map()
     for (const lane of LANES) {
@@ -239,6 +253,7 @@ export function createTeamPlanner({
           id,
           anchor: strengthScore(id).score * (style?.strength ?? 1)
             + styleScore(style, id, 'pick').points * 0.6
+            + (strongComboDegree.get(id) || 0) * 2
             + seededUnit(seed, 'anchor', style?.key, id) * 2,
         }))
         .sort((a, b) => b.anchor - a.anchor)
@@ -286,7 +301,7 @@ export function createTeamPlanner({
           styleKey: style?.key,
         }
       })
-      .filter((plan) => plan.metrics && new Set(plan.metrics.lanes).size === 5)
+      .filter((plan) => plan.metrics && new Set(plan.metrics.lanes).size >= targetLanes)
       .sort((a, b) => b.score - a.score)
       .slice(0, keep)
   }
@@ -357,13 +372,15 @@ export function createTeamPlanner({
       }
     }
 
+    const occupiedLanes = new Set(teamPicks.map(laneOf))
     return baseScored.map((item) => {
+      const laneBlocked = occupiedLanes.has(laneOf(item.id))
       if (!shortlist.has(item.id)) {
-        return { ...item, score: item.adjusted * 0.35, adjusted: item.adjusted * 0.35, banImpact: 0 }
+        // 非短名单同样不吃满员路的个体兜底分，否则禁人又会溜回对方已满员的路
+        const fallback = laneBlocked ? 0 : item.adjusted * 0.35
+        return { ...item, score: fallback, adjusted: fallback, banImpact: 0 }
       }
       const without = available.filter((id) => Number(id) !== item.id)
-      const occupiedLanes = new Set(teamPicks.map(laneOf))
-      const laneBlocked = occupiedLanes.has(laneOf(item.id))
       const withCandidate = laneBlocked ? null : buildLineups([...teamPicks, item.id], without, {
         style: opponentStyle, oppPicks: myPicks, seed,
         width: 8, perLane: 7, keep: 1,
@@ -378,8 +395,9 @@ export function createTeamPlanner({
       const tilt = 1 + (seededUnit(seed, 'ban-impact', step, item.id) * 2 - 1) * 0.08
       const impact = rawImpact * tilt
       // 整队损失是主信号，个体强度只用来区分「损失差不多」的候选。
-      // 权重必须让「有一点损失」压过「零损失但单卡很强」，否则禁用又退回按英雄强度排序
-      const adjusted = impact * 8 + item.adjusted * 0.25
+      // 权重必须让「有一点损失」压过「零损失但单卡很强」，否则禁用又退回按英雄强度排序。
+      // 对方主路已满员时禁了也拆不动阵容，不吃个体兜底分，避免去禁对方根本不需要的路。
+      const adjusted = impact * 8 + (laneBlocked ? 0 : item.adjusted * 0.25)
       const reasons = withCandidate && rawImpact > 0.5
         ? [...new Set([
             `禁后对手最佳整队评分下降 ${rawImpact.toFixed(1)}`,

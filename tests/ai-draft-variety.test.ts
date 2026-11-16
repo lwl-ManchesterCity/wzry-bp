@@ -119,4 +119,17 @@ describe('系列赛记忆', () => {
     const reused = advisor.rank({ ...args, avoid: [target] })[0]
     expect(reused.adjusted).toBeLessThan(fresh.adjusted)
   })
+
+  it('上局用过的强协同英雄（整队领先约25分）也被换下，不再每局固定中辅', () => {
+    const idOf = (name: string) => heroes.find((hero) => hero.name === name)!.id
+    const blue = ['盾山', '艾琳', '元流之子(坦克)', '司空震', '嫦娥'].map(idOf)
+    const red4 = ['镜', '不知火舞', '曹操', '马可波罗'].map(idOf)
+    const available = allIds.filter((id) => !red4.includes(id) && !blue.includes(id))
+    const pickoff = DRAFT_STYLES.find((item) => item.key === 'pickoff')!
+    const args = { teamPicks: red4, available, myPicks: red4, oppPicks: blue, limit: 8, mode: 'pick' as const, style: pickoff, seed: 'repeat', step: 17 }
+    const fresh = advisor.rank(args)
+    const reused = advisor.rank({ ...args, avoid: [idOf('鬼谷子')] })
+    expect(fresh[0].name).toBe('鬼谷子')
+    expect(reused[0].name).not.toBe('鬼谷子')
+  })
 })

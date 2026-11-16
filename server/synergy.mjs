@@ -5,8 +5,13 @@
  * 全部结论由程序算出，不依赖模型自觉：模型只负责解释，不负责发现。
  */
 
+import { seededUnit } from '../shared/styles.mjs'
+
 // traits 数组的维度顺序，与 hero-synergy.json 的 _schema 一致
 export const DIMENSIONS = ['front', 'engage', 'peel', 'poke', 'burst', 'sustain', 'mobility', 'control']
+
+// 八维雷达的轴顺序；底层量与 summarizeStructure 同口径，见 radarRaw
+export const RADAR_KEYS = ['front', 'engage', 'peel', 'poke', 'burst', 'sustain', 'mobility', 'control']
 
 const PHASE_LABEL = { early: '前中期', mid: '中期', late: '后期' }
 
@@ -107,6 +112,7 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
       切入收割: 'pickoff',
       对线换血: 'lane',
       推进压制: 'push',
+      掩护推进: 'push',
     }
 
     for (let i = 0; i < list.length; i += 1) {
@@ -228,6 +234,23 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
               `${W.name}快速清线推波，${S.name}在塔外安全点塔，兵线一到就能持续磨损防御塔`,
               // 同一条「清线的人」配不同点塔位不是两种组合，去重时按清线者算
               { recipient: S.name, anchor: W.name },
+            )
+            break
+          }
+        }
+
+        // 掩护推进：peel2 的保人位 + 带位移的持续输出/点塔核心（元流之子辅助+狄仁杰这类）。
+        // 只补 peel==2 的缝：peel>=3 已由封挡接输出覆盖、mobility<=1 已由保护链覆盖，
+        // 这里专抓「有位移所以不算站桩保护、但保人位又不够强到封挡」的保推进搭配。
+        for (const [P, C] of [[A, B], [B, A]]) {
+          if (P.t.peel === 2 && C.m.siege >= 3 && C.m.dps >= 3 && C.t.mobility >= 2) {
+            push(
+              '掩护推进',
+              'conditional',
+              P,
+              C,
+              `${P.name}提供封挡与护盾，${C.name}带位移且持续输出/点塔能力强，可以在掩护下安全推进磨塔`,
+              { recipient: C.name, protector: P.name },
             )
             break
           }
@@ -531,5 +554,69 @@ export function createSynergyEngine({ synergy, heroes, macro = null }) {
     return notes
   }
 
-  return { analyzeTeam, compareSides, nameOf }
+  // 八维雷达底层量：与 summarizeStructure 同口径——开团/保人/爆发是阈值计数（>=3），
+  // 机动是均值，其余是可叠加的求和。求和会把"半开团/弱保人"误算成能力，故不用。
+  function radarRaw(picks) {
+    const list = picks.map((id) => traitsOf(synergy, id)).filter(Boolean)
+    const sum = (key) => list.reduce((total, t) => total + t[key], 0)
+    const count = (key) => list.filter((t) => t[key] >= 3).length
+    return [
+      sum('front'),
+      count('engage'),
+      count('peel'),
+      sum('poke'),
+      count('burst'),
+      sum('sustain'),
+      list.length ? Number((sum('mobility') / list.length).toFixed(2)) : 0,
+      sum('control'),
+    ]
+  }
+
+  // 归一参考＝当前英雄池按路抽样的合法五人组语料（中性基线，非职业 meta）。
+  // 理论上限 15 真实达不到，用它归一会把雷达压到中心；改用每轴经验百分位。
+  let radarCorpus = null
+  function buildRadarCorpus() {
+    if (radarCorpus) return radarCorpus
+    const pools = new Map()
+    for (const hero of heroes) {
+      const lane = primaryLane(hero.id)
+      if (lane == null || !traitsOf(synergy, hero.id)) continue
+      if (!pools.has(lane)) pools.set(lane, [])
+      pools.get(lane).push(hero.id)
+    }
+    const lanes = [...pools.keys()]
+    const columns = RADAR_KEYS.map(() => [])
+    const N = 4000
+    for (let k = 0; k < N; k += 1) {
+      const picks = lanes.map((lane, li) => {
+        const pool = pools.get(lane)
+        return pool[Math.floor(seededUnit('radar-corpus', k, li) * pool.length)]
+      })
+      radarRaw(picks).forEach((value, i) => columns[i].push(value))
+    }
+    radarCorpus = columns.map((col) => col.sort((a, b) => a - b))
+    return radarCorpus
+  }
+
+  function radarProfile(picks) {
+    const corpus = buildRadarCorpus()
+    const raw = radarRaw(picks)
+    // 百分位＝参照中"严格弱于本队"的占比。用严格小于而非 ≤：
+    // 离散小整数有大量并列（尤其 0），≤ 会把"完全没有该能力"也算成中等偏上（0→66），
+    // 严格小于让 0 归 0、并列不再虚计。
+    const pct = raw.map((value, i) => {
+      const col = corpus[i]
+      let lo = 0
+      let hi = col.length
+      while (lo < hi) {
+        const mid = (lo + hi) >> 1
+        if (col[mid] < value) lo = mid + 1
+        else hi = mid
+      }
+      return Math.round((lo / col.length) * 100)
+    })
+    return { raw, pct, corpusSize: corpus[0].length }
+  }
+
+  return { analyzeTeam, compareSides, nameOf, radarProfile }
 }

@@ -147,8 +147,24 @@ export function useDraft(heroes: Hero[]) {
   }
 
   function undo() {
-    if (!currentGame.value.actions.length) return
-    undoLastAction(currentGame.value)
+    const actions = currentGame.value.actions
+    if (!actions.length) return
+    if (settings.opponent === 'ai') {
+      // 撤到人类上一手之前：只撤一手会留下 AI 的回合，它会同种子原样补回，撤销等于没撤
+      let lastHuman = -1
+      for (let index = actions.length - 1; index >= 0; index -= 1) {
+        if (actions[index].side === settings.humanSide) {
+          lastHuman = index
+          break
+        }
+      }
+      if (lastHuman < 0) return
+      actions.splice(lastHuman)
+      delete currentGame.value.completedAt
+      if (currentGame.value.isPeak) peakSide.value = settings.humanSide
+    } else {
+      undoLastAction(currentGame.value)
+    }
     selectedHeroId.value = null
     error.value = ''
   }

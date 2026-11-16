@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { createSynergyEngine } from './synergy.mjs'
+import { createSynergyEngine, RADAR_KEYS } from './synergy.mjs'
 import { AXIS_LABEL, createMatchupModel } from './matchup.mjs'
 import { buildDecisionContext, createDraftAdvisor } from './ai-draft.mjs'
 import { createMetaModel, describeMembers } from './meta-strength.mjs'
@@ -263,6 +263,12 @@ function analyzeSynergy(game, lineups = null) {
   const red = synergyEngine.analyzeTeam(pickIds('red'), banIds('blue'))
   const analysis = { blue, red, crossNotes: synergyEngine.compareSides(blue, red), axes: null, lanes: null, axisNotes: [] }
 
+  // 八维雷达：底层量与 structure 同口径，归一走每轴经验百分位（见 synergy.radarProfile）
+  analysis.radar = {
+    blue: synergyEngine.radarProfile(pickIds('blue')),
+    red: synergyEngine.radarProfile(pickIds('red')),
+  }
+
   // 五轴与分路对位：把属性还原成对局优势，否则模型只能复述前排/控制这类静态指标
   if (matchupModel) {
     const manualOf = (side) => (lineups && typeof lineups[side] === 'object' ? lineups[side] : null)
@@ -506,6 +512,18 @@ function buildSynergyBasis(analysis) {
     axisNotes: analysis.axisNotes,
     meta: analysis.meta,
     closure: analysis.closure,
+    radar: analysis.radar
+      ? {
+          corpusSize: analysis.radar.blue.corpusSize,
+          axes: RADAR_KEYS.map((key, i) => ({
+            key,
+            blueRaw: analysis.radar.blue.raw[i],
+            redRaw: analysis.radar.red.raw[i],
+            bluePct: analysis.radar.blue.pct[i],
+            redPct: analysis.radar.red.pct[i],
+          })),
+        }
+      : null,
   }
 }
 
@@ -615,8 +633,10 @@ app.post('/api/ai-draft', async (request, response) => {
     // 未配置密钥时仍可对战，只是由规则引擎直接落子
     if (!apiKey()) return response.json(ruleChoice)
 
+    // 只把整队评分前5交给模型：避免它挑中第8名这类组合不成型的差候选还编造理由（UI 候选池仍显示全部）
     // 候选顺序按种子打散：模型有「优先选第一条」的倾向，固定顺序等于固定答案
     const ordered = candidates
+      .slice(0, 5)
       .map((item) => ({ item, key: seededUnit(String(seed ?? 'default'), 'order', step, item.id) }))
       .sort((a, b) => a.key - b.key)
       .map((entry) => entry.item)
@@ -660,7 +680,8 @@ heroId 必须原样复制候选列表里给出的编号，绝不能自己编造�
           { role: 'user', content: `请给出第 ${ordinal} 手${type === 'ban' ? '禁用' : '选择'}。` },
         ],
         temperature: 0.95,
-        max_tokens: 200,
+        // 最坏 JSON（80 字理由）≈160 token，200 裕量太薄易截断→静默退回规则；400 留足裕量
+        max_tokens: 400,
         response_format: { type: 'json_object' },
       }),
       signal: AbortSignal.timeout(20000),
@@ -673,11 +694,11 @@ heroId 必须原样复制候选列表里给出的编号，绝不能自己编造�
     const parsed = parseModelJson(content)
     if (!parsed) return response.json(ruleChoice)
 
-    // 模型只能从候选里挑，越界一律回落到规则首选，避免选出零前排的离谱阵容
+    // 模型只能从交给它的前5候选里挑，越界一律回落到规则首选，避免选出零前排的离谱阵容
     const chosenId = Number(parsed?.heroId)
     const chosenName = String(parsed?.heroName || '').trim()
-    const matched = candidates.find((item) => item.id === chosenId)
-      || (chosenName ? candidates.find((item) => item.name === chosenName) : null)
+    const matched = ordered.find((item) => item.id === chosenId)
+      || (chosenName ? ordered.find((item) => item.name === chosenName) : null)
     if (!matched) return response.json(ruleChoice)
 
     return response.json({

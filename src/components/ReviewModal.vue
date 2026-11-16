@@ -4,10 +4,12 @@ import {
   Activity,
   AlertCircle,
   BrainCircuit,
+  ChevronDown,
   Clock3,
   Database,
   Layers,
   LoaderCircle,
+  Radar,
   RefreshCw,
   Route,
   Shield,
@@ -17,6 +19,7 @@ import {
   X,
 } from 'lucide-vue-next'
 import type { DraftReview, SeriesSnapshot, StatsBasis, StructureFinding, SynergyBasis } from '../types'
+import RadarChart from './RadarChart.vue'
 
 const props = defineProps<{
   snapshot: SeriesSnapshot
@@ -103,6 +106,9 @@ const axisRows = computed(() => {
 const laneRows = computed(() => synergyBasis.value?.lanes ?? [])
 const axisNotes = computed(() => synergyBasis.value?.axisNotes ?? [])
 
+// 八维雷达：底层量与 structure 同口径，百分位归一，蓝红叠加看整体形状差
+const radarAxes = computed(() => synergyBasis.value?.radar?.axes ?? [])
+
 // 体系闭环度与胜利路径：环节是硬条件，缺口比分数更能说明问题
 const closureBasis = computed(() => synergyBasis.value?.closure ?? null)
 const closureSections = computed(() => {
@@ -124,6 +130,12 @@ const metaSections = computed(() => {
     { side: 'red' as const, name: props.snapshot.redName, data: meta.red },
   ]
 })
+
+// 第二层只在有对位内容时出现；第三层只在有事实块时出现，避免空标题
+const hasMatchup = computed(() => Boolean(review.value?.matchups.length) || axisRows.value.length > 0 || radarAxes.value.length > 0)
+const hasEvidence = computed(
+  () => closureSections.value.length > 0 || metaSections.value.length > 0 || synergySections.value.length > 0 || Boolean(statsBasis.value),
+)
 
 async function requestReview() {
   loading.value = true
@@ -212,280 +224,324 @@ onUnmounted(() => {
         </div>
 
         <template v-else-if="review">
-          <section class="verdict-card">
-            <div class="verdict-topline">
-              <span><Swords :size="15" />综合阵容判断</span>
-              <span>置信度：{{ review.verdict.confidence }}<template v-if="responseModel"> · {{ responseModel }}</template></span>
-            </div>
-            <div class="verdict-main">
-              <div class="win-team blue">
-                <span>{{ snapshot.blueName }}</span>
-                <strong>{{ review.verdict.blueWinRate }}<small>%</small></strong>
+          <!-- 第一层 · 结论：谁占优、获胜条件、双方怎么打 -->
+          <section class="review-layer">
+            <header class="layer-head">
+              <span class="layer-index">01</span>
+              <div class="layer-title">
+                <h3>结论</h3>
+                <span>谁占优 · 获胜条件 · 双方打法</span>
               </div>
-              <div class="verdict-center">
-                <span>阵容倾向</span>
-                <b>{{ favoredText }}</b>
-              </div>
-              <div class="win-team red">
-                <span>{{ snapshot.redName }}</span>
-                <strong>{{ review.verdict.redWinRate }}<small>%</small></strong>
-              </div>
-            </div>
-            <div class="win-rate-track">
-              <i :style="{ width: `${review.verdict.blueWinRate}%` }" />
-            </div>
-            <p>{{ review.verdict.summary }}</p>
-            <div v-if="consistencyIssues.length" class="verdict-conflict">
-              <header><AlertCircle :size="15" />与程序结论不一致 · 倾向仍是模型判断，未作修正</header>
-              <ul>
-                <li v-for="(issue, index) in consistencyIssues" :key="index">{{ issue }}</li>
-              </ul>
-            </div>
-          </section>
-
-          <section v-if="axisRows.length" class="axis-basis">
-            <header class="synergy-head">
-              <h3><Activity :size="16" />五轴对局模型</h3>
-              <span>0-100 为相对五人上限 · 两侧独立计分</span>
             </header>
 
-            <div class="axis-list">
-              <div v-for="row in axisRows" :key="row.key" class="axis-row">
-                <span class="axis-label">{{ row.label }}</span>
-                <div class="axis-bars">
-                  <span class="bar-track"><i class="blue" :style="{ width: `${row.blue}%` }" /></span>
-                  <span class="bar-track"><i class="red" :style="{ width: `${row.red}%` }" /></span>
-                </div>
-                <span class="axis-num"><b class="blue">{{ row.blue }}</b><em>/</em><b class="red">{{ row.red }}</b></span>
-                <span class="axis-lead" :class="Math.abs(row.diff) < 6 ? 'even' : row.diff > 0 ? 'blue' : 'red'">
-                  {{ Math.abs(row.diff) < 6 ? '接近' : `${row.diff > 0 ? '蓝 +' : '红 +'}${Math.abs(row.diff)}` }}
-                </span>
+            <section class="verdict-card">
+              <div class="verdict-topline">
+                <span><Swords :size="15" />综合阵容判断</span>
+                <span>置信度：{{ review.verdict.confidence }}<template v-if="responseModel"> · {{ responseModel }}</template></span>
               </div>
-            </div>
-
-            <div class="lane-grid">
-              <div v-for="(lane, index) in laneRows" :key="index" class="lane-row">
-                <span class="lane-name">{{ lane.lane }}</span>
-                <span class="lane-side blue" :class="{ vacant: !lane.blue }" :title="lane.blue?.reasons.join('、')">
-                  {{ lane.blue ? `${lane.blue.name} ${lane.blue.score}` : '无人' }}<i v-if="lane.blue && !lane.blue.natural" class="lane-off">补位</i>
-                </span>
-                <span class="lane-vs">vs</span>
-                <span class="lane-side red" :class="{ vacant: !lane.red }" :title="lane.red?.reasons.join('、')">
-                  {{ lane.red ? `${lane.red.name} ${lane.red.score}` : '无人' }}<i v-if="lane.red && !lane.red.natural" class="lane-off">补位</i>
-                </span>
-                <span class="lane-edge" :class="lane.vacant ? 'vacant' : lane.leader">
-                  {{ lane.vacant ? '无对位' : lane.leader === 'even' ? '持平' : `${lane.leader === 'blue' ? '蓝 +' : '红 +'}${Math.abs(lane.edge)}` }}
-                </span>
-              </div>
-            </div>
-
-            <ul v-if="axisNotes.length" class="axis-notes">
-              <li v-for="note in axisNotes" :key="note">{{ note }}</li>
-            </ul>
-          </section>
-
-          <section v-if="closureSections.length" class="closure-basis">
-            <header class="synergy-head">
-              <h3><Route :size="16" />体系闭环度与胜利路径</h3>
-              <span>七项硬环节 · 有或没有，不做加权</span>
-            </header>
-
-            <div class="closure-rows">
-              <div v-for="team in closureSections" :key="team.side" class="closure-row" :class="team.side">
-                <div class="closure-line">
-                  <span class="closure-team">{{ team.name }}</span>
-                  <b class="closure-count">{{ team.data.passed }}<em>/{{ team.data.total }}</em></b>
-                  <span class="closure-tier" :class="team.data.tier">{{ team.data.tierLabel }}</span>
-                  <span v-if="team.data.missing.length" class="closure-missing">缺 {{ team.data.missing.join('、') }}</span>
-                  <span v-else class="closure-full">无缺口</span>
+              <div class="verdict-main">
+                <div class="win-team blue">
+                  <span>{{ snapshot.blueName }}</span>
+                  <strong>{{ review.verdict.blueWinRate }}<small>%</small></strong>
                 </div>
-                <div class="closure-checks">
-                  <span
-                    v-for="check in team.data.checks"
-                    :key="check.key"
-                    class="closure-chip"
-                    :class="{ ok: check.ok }"
-                    :title="check.detail"
-                  >
-                    <i>{{ check.ok ? '✓' : '✗' }}</i>{{ check.label }}
-                  </span>
+                <div class="verdict-center">
+                  <span>阵容倾向</span>
+                  <b>{{ favoredText }}</b>
                 </div>
-                <div v-if="team.data.paths" class="path-list">
-                  <div v-for="item in team.data.paths.paths" :key="item.key" class="path-row" :class="item.status">
-                    <span class="path-label">{{ item.label }}</span>
-                    <span class="path-status">{{ item.statusLabel }}</span>
-                    <span class="path-detail">{{ item.detail }}</span>
-                  </div>
+                <div class="win-team red">
+                  <span>{{ snapshot.redName }}</span>
+                  <strong>{{ review.verdict.redWinRate }}<small>%</small></strong>
                 </div>
               </div>
-            </div>
-
-            <div class="closure-hint" :class="{ active: closureBasis?.hint?.active }">
-              {{ closureBasis?.hint?.text }}
-              <em v-if="closureBasis?.paths">{{ closureBasis.paths.text }}</em>
-            </div>
-          </section>
-
-          <section v-if="metaSections.length" class="meta-basis">
-            <header class="synergy-head">
-              <h3><TrendingUp :size="16" />版本强度</h3>
-              <span>赛季出场 × 胜率合成 0-100 · 未登场不计低分</span>
-            </header>
-
-            <div class="meta-rows">
-              <div v-for="team in metaSections" :key="team.side" class="meta-row" :class="team.side">
-                <div class="meta-line">
-                  <span class="meta-team">{{ team.name }}</span>
-                  <b class="meta-avg">{{ team.data.avg ?? '—' }}</b>
-                  <span class="meta-samples">有效样本 {{ team.data.knownCount }}/5</span>
-                </div>
-                <div class="meta-members">
-                  <span
-                    v-for="hero in team.data.members"
-                    :key="hero.id"
-                    class="meta-chip"
-                    :class="{ none: hero.score === null }"
-                    :title="hero.note"
-                  >
-                    <b>{{ hero.name }}</b>
-                    <template v-if="hero.score !== null">
-                      <em class="meta-tier" :class="hero.tier">{{ hero.tier }}</em>
-                      <span class="meta-score">{{ hero.score }}</span>
-                      <i>{{ hero.games }} 场 · {{ hero.winRate }}%</i>
-                    </template>
-                    <i v-else>未登场</i>
-                  </span>
-                </div>
+              <div class="win-rate-track">
+                <i :style="{ width: `${review.verdict.blueWinRate}%` }" />
               </div>
-            </div>
-
-            <p v-if="metaPolicy" class="meta-policy-line">
-              <span class="meta-policy" :class="{ diag: metaPolicy.diagnosticOnly }">
-                {{ metaPolicy.sampleReady === false ? '样本不足·仅作诊断' : metaPolicy.diagnosticOnly ? '本轮仅作诊断' : '可作平手裁决' }}
-              </span>
-              {{ metaPolicy.text }}
-            </p>
-          </section>
-
-          <section v-if="synergySections.length" class="synergy-basis">
-            <header class="synergy-head">
-              <h3><Layers :size="16" />组合协同与结构</h3>
-              <span>按英雄功能标签计算 · 不依赖模型判断</span>
-            </header>
-            <div class="synergy-rows">
-              <div v-for="team in synergySections" :key="team.side" class="synergy-row" :class="team.side">
-                <span class="synergy-side">{{ team.name }}</span>
-                <div class="synergy-main">
-                  <div
-                    v-for="combo in team.cards"
-                    :key="`${combo.name}-${combo.heroes.join()}`"
-                    class="combo-card"
-                    :class="combo.tier"
-                  >
-                    <div class="combo-top">
-                      <span class="combo-tier">{{ combo.tier === 'strong' ? '强协同' : '条件协同' }}</span>
-                      <b>{{ combo.heroes.join(' + ') }}</b>
-                      <span class="combo-name">{{ combo.name }}</span>
-                      <span v-if="combo.source === 'derived'" class="combo-src">机制推导</span>
-                    </div>
-                    <p v-if="combo.note?.impact" class="combo-impact">{{ combo.note.impact }}</p>
-                    <p v-else class="combo-impact">{{ combo.mechanism }}</p>
-                    <p v-if="combo.note?.counter" class="combo-counter">对手应对：{{ combo.note.counter }}</p>
-                  </div>
-
-                  <div v-for="item in team.broken" :key="`${item.held}-${item.missing}`" class="combo-broken">
-                    <span>被拆</span>
-                    <p><b>{{ item.held }}</b> 的「{{ item.name }}」因 <b>{{ item.missing }}</b> 被禁用而无法成立</p>
-                  </div>
-
-                  <p v-if="!team.cards.length && !team.broken.length" class="combo-empty">未形成记录在案的成型搭配</p>
-
-                  <div class="struct-metrics">
-                    <span>前排 <b>{{ team.structure.front }}</b>/15</span>
-                    <span>硬开团 <b>{{ team.structure.engageCount }}</b></span>
-                    <span>保人 <b>{{ team.structure.peelCount }}</b></span>
-                    <span>消耗 <b>{{ team.structure.pokeScore }}</b></span>
-                    <span>控制 <b>{{ team.structure.controlScore }}</b></span>
-                    <span>机动 <b>{{ team.structure.mobilityAvg }}</b></span>
-                  </div>
-
-                  <ul class="struct-findings">
-                    <li v-for="finding in team.topFindings" :key="finding.title" :class="finding.level">
-                      <b>{{ finding.title }}</b>
-                      <em>{{ finding.detail }}</em>
-                    </li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-            <ul v-if="crossNotes.length" class="synergy-cross">
-              <li v-for="note in crossNotes" :key="note">{{ note }}</li>
-            </ul>
-          </section>
-
-          <section v-if="statsBasis" class="stats-basis">
-            <header class="stats-head">
-              <h3><Database :size="16" />分析依据</h3>
-              <span>{{ statsBasis.seasonName }} · {{ statsBasis.seasonRange }} · 数据截至 {{ statsBasis.fetchedAt }}</span>
-            </header>
-            <div class="stats-rows">
-              <div v-for="team in basisSections" :key="team.side" class="stats-row" :class="team.side">
-                <span class="stats-side">{{ team.name }}</span>
-                <div class="stats-chips">
-                  <div
-                    v-for="hero in team.data.picks"
-                    :key="hero.heroId"
-                    class="stat-chip"
-                    :class="{ thin: hero.games > 0 && hero.games < 15 }"
-                    :title="hero.lane ? `${hero.job} · ${hero.lane}` : hero.job"
-                  >
-                    <b>{{ hero.name }}</b>
-                    <span v-if="hero.games" :class="rateClass(hero.winRate)">{{ hero.games }} 场 · {{ hero.winRate }}%</span>
-                    <span v-else class="stat-none">未登场</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <p class="stats-note">
-              数据来自 {{ statsBasis.source }}，为职业赛事样本；虚线框表示出场不足 15 场。胜率同时受队伍实力影响，不等同于英雄强度。
-            </p>
-          </section>
-
-          <div class="team-review-grid">
-            <section v-for="team in teamSections" :key="team.side" class="team-review" :class="team.side">
-              <h3><Shield :size="18" />{{ team.name }}</h3>
-              <div class="review-columns">
-                <div>
-                  <h4>阵容优势</h4>
-                  <ul class="strengths"><li v-for="item in team.data.strengths" :key="item">{{ item }}</li></ul>
-                </div>
-                <div>
-                  <h4>潜在短板</h4>
-                  <ul class="weaknesses"><li v-for="item in team.data.weaknesses" :key="item">{{ item }}</li></ul>
-                </div>
-              </div>
-              <div class="timing"><Clock3 :size="15" /><div><b>关键节奏</b><p>{{ team.data.keyTiming }}</p></div></div>
-              <div class="gameplan">
-                <h4>推荐打法</h4>
-                <ol><li v-for="item in team.data.gameplan" :key="item">{{ item }}</li></ol>
+              <p>{{ review.verdict.summary }}</p>
+              <div v-if="consistencyIssues.length" class="verdict-conflict">
+                <header><AlertCircle :size="15" />与程序结论不一致 · 倾向仍是模型判断，未作修正</header>
+                <ul>
+                  <li v-for="(issue, index) in consistencyIssues" :key="index">{{ issue }}</li>
+                </ul>
               </div>
             </section>
-          </div>
 
-          <section v-if="review.matchups.length" class="matchup-section">
-            <h3><Swords :size="18" />关键对位与联动</h3>
-            <div class="matchup-grid">
-              <article v-for="item in review.matchups" :key="item.title">
-                <h4>{{ item.title }}<span v-if="item.unverified" class="matchup-flag">未引用事实</span></h4>
-                <p>{{ item.analysis }}</p>
-              </article>
+            <section v-if="review.keyFactors.length" class="key-factors">
+              <h3>本场获胜条件</h3>
+              <ul><li v-for="(item, index) in review.keyFactors" :key="item"><span>0{{ index + 1 }}</span>{{ item }}</li></ul>
+            </section>
+
+            <div class="team-review-grid">
+              <section v-for="team in teamSections" :key="team.side" class="team-review" :class="team.side">
+                <h3><Shield :size="18" />{{ team.name }}</h3>
+                <div class="review-columns">
+                  <div>
+                    <h4>阵容优势</h4>
+                    <ul class="strengths"><li v-for="item in team.data.strengths" :key="item">{{ item }}</li></ul>
+                  </div>
+                  <div>
+                    <h4>潜在短板</h4>
+                    <ul class="weaknesses"><li v-for="item in team.data.weaknesses" :key="item">{{ item }}</li></ul>
+                  </div>
+                </div>
+                <div class="timing"><Clock3 :size="15" /><div><b>关键节奏</b><p>{{ team.data.keyTiming }}</p></div></div>
+                <div class="gameplan">
+                  <h4>推荐打法</h4>
+                  <ol><li v-for="item in team.data.gameplan" :key="item">{{ item }}</li></ol>
+                </div>
+              </section>
             </div>
           </section>
 
-          <section v-if="review.keyFactors.length" class="key-factors">
-            <h3>本场获胜条件</h3>
-            <ul><li v-for="(item, index) in review.keyFactors" :key="item"><span>0{{ index + 1 }}</span>{{ item }}</li></ul>
+          <!-- 第二层 · 对位：八维画像 + 关键对位联动 + 五轴对局模型 -->
+          <section v-if="hasMatchup" class="review-layer">
+            <header class="layer-head">
+              <span class="layer-index">02</span>
+              <div class="layer-title">
+                <h3>对位</h3>
+                <span>八维阵容画像 · 关键对位 · 五轴对局模型</span>
+              </div>
+            </header>
+
+            <section v-if="radarAxes.length" class="radar-basis">
+              <header class="synergy-head">
+                <h3><Radar :size="16" />八维阵容画像</h3>
+                <span>蓝红叠加 · 0-100 百分位强度</span>
+              </header>
+              <RadarChart :axes="radarAxes" :blue-name="snapshot.blueName" :red-name="snapshot.redName" />
+            </section>
+
+            <section v-if="review.matchups.length" class="matchup-section">
+              <h3><Swords :size="18" />关键对位与联动</h3>
+              <div class="matchup-grid">
+                <article v-for="item in review.matchups" :key="item.title">
+                  <h4>{{ item.title }}<span v-if="item.unverified" class="matchup-flag">未引用事实</span></h4>
+                  <p>{{ item.analysis }}</p>
+                </article>
+              </div>
+            </section>
+
+            <section v-if="axisRows.length" class="axis-basis">
+              <header class="synergy-head">
+                <h3><Activity :size="16" />五轴对局模型</h3>
+                <span>0-100 为相对五人上限 · 两侧独立计分</span>
+              </header>
+
+              <div class="axis-list">
+                <div v-for="row in axisRows" :key="row.key" class="axis-row">
+                  <span class="axis-label">{{ row.label }}</span>
+                  <div class="axis-bars">
+                    <span class="bar-track"><i class="blue" :style="{ width: `${row.blue}%` }" /></span>
+                    <span class="bar-track"><i class="red" :style="{ width: `${row.red}%` }" /></span>
+                  </div>
+                  <span class="axis-num"><b class="blue">{{ row.blue }}</b><em>/</em><b class="red">{{ row.red }}</b></span>
+                  <span class="axis-lead" :class="Math.abs(row.diff) < 6 ? 'even' : row.diff > 0 ? 'blue' : 'red'">
+                    {{ Math.abs(row.diff) < 6 ? '接近' : `${row.diff > 0 ? '蓝 +' : '红 +'}${Math.abs(row.diff)}` }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="lane-grid">
+                <div v-for="(lane, index) in laneRows" :key="index" class="lane-row">
+                  <span class="lane-name">{{ lane.lane }}</span>
+                  <span class="lane-side blue" :class="{ vacant: !lane.blue }" :title="lane.blue?.reasons.join('、')">
+                    {{ lane.blue ? `${lane.blue.name} ${lane.blue.score}` : '无人' }}<i v-if="lane.blue && !lane.blue.natural" class="lane-off">补位</i>
+                  </span>
+                  <span class="lane-vs">vs</span>
+                  <span class="lane-side red" :class="{ vacant: !lane.red }" :title="lane.red?.reasons.join('、')">
+                    {{ lane.red ? `${lane.red.name} ${lane.red.score}` : '无人' }}<i v-if="lane.red && !lane.red.natural" class="lane-off">补位</i>
+                  </span>
+                  <span class="lane-edge" :class="lane.vacant ? 'vacant' : lane.leader">
+                    {{ lane.vacant ? '无对位' : lane.leader === 'even' ? '持平' : `${lane.leader === 'blue' ? '蓝 +' : '红 +'}${Math.abs(lane.edge)}` }}
+                  </span>
+                </div>
+              </div>
+
+              <ul v-if="axisNotes.length" class="axis-notes">
+                <li v-for="note in axisNotes" :key="note">{{ note }}</li>
+              </ul>
+            </section>
           </section>
+
+          <!-- 第三层 · 依据：程序计算的事实块，默认折叠，需要核对时再展开 -->
+          <details v-if="hasEvidence" class="review-layer evidence-fold">
+            <summary class="layer-head">
+              <span class="layer-index">03</span>
+              <div class="layer-title">
+                <h3>依据</h3>
+                <span>程序计算的事实块 · 点击展开核对</span>
+              </div>
+              <span class="fold-hint"><ChevronDown :size="18" /></span>
+            </summary>
+
+            <div class="evidence-body">
+              <section v-if="closureSections.length" class="closure-basis">
+                <header class="synergy-head">
+                  <h3><Route :size="16" />体系闭环度与胜利路径</h3>
+                  <span>七项硬环节 · 有或没有，不做加权</span>
+                </header>
+
+                <div class="closure-rows">
+                  <div v-for="team in closureSections" :key="team.side" class="closure-row" :class="team.side">
+                    <div class="closure-line">
+                      <span class="closure-team">{{ team.name }}</span>
+                      <b class="closure-count">{{ team.data.passed }}<em>/{{ team.data.total }}</em></b>
+                      <span class="closure-tier" :class="team.data.tier">{{ team.data.tierLabel }}</span>
+                      <span v-if="team.data.missing.length" class="closure-missing">缺 {{ team.data.missing.join('、') }}</span>
+                      <span v-else class="closure-full">无缺口</span>
+                    </div>
+                    <div class="closure-checks">
+                      <span
+                        v-for="check in team.data.checks"
+                        :key="check.key"
+                        class="closure-chip"
+                        :class="{ ok: check.ok }"
+                        :title="check.detail"
+                      >
+                        <i>{{ check.ok ? '✓' : '✗' }}</i>{{ check.label }}
+                      </span>
+                    </div>
+                    <div v-if="team.data.paths" class="path-list">
+                      <div v-for="item in team.data.paths.paths" :key="item.key" class="path-row" :class="item.status">
+                        <span class="path-label">{{ item.label }}</span>
+                        <span class="path-status">{{ item.statusLabel }}</span>
+                        <span class="path-detail">{{ item.detail }}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="closure-hint" :class="{ active: closureBasis?.hint?.active }">
+                  {{ closureBasis?.hint?.text }}
+                  <em v-if="closureBasis?.paths">{{ closureBasis.paths.text }}</em>
+                </div>
+              </section>
+
+              <section v-if="metaSections.length" class="meta-basis">
+                <header class="synergy-head">
+                  <h3><TrendingUp :size="16" />版本强度</h3>
+                  <span>赛季出场 × 胜率合成 0-100 · 未登场不计低分</span>
+                </header>
+
+                <div class="meta-rows">
+                  <div v-for="team in metaSections" :key="team.side" class="meta-row" :class="team.side">
+                    <div class="meta-line">
+                      <span class="meta-team">{{ team.name }}</span>
+                      <b class="meta-avg">{{ team.data.avg ?? '—' }}</b>
+                      <span class="meta-samples">有效样本 {{ team.data.knownCount }}/5</span>
+                    </div>
+                    <div class="meta-members">
+                      <span
+                        v-for="hero in team.data.members"
+                        :key="hero.id"
+                        class="meta-chip"
+                        :class="{ none: hero.score === null }"
+                        :title="hero.note"
+                      >
+                        <b>{{ hero.name }}</b>
+                        <template v-if="hero.score !== null">
+                          <em class="meta-tier" :class="hero.tier">{{ hero.tier }}</em>
+                          <span class="meta-score">{{ hero.score }}</span>
+                          <i>{{ hero.games }} 场 · {{ hero.winRate }}%</i>
+                        </template>
+                        <i v-else>未登场</i>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <p v-if="metaPolicy" class="meta-policy-line">
+                  <span class="meta-policy" :class="{ diag: metaPolicy.diagnosticOnly }">
+                    {{ metaPolicy.sampleReady === false ? '样本不足·仅作诊断' : metaPolicy.diagnosticOnly ? '本轮仅作诊断' : '可作平手裁决' }}
+                  </span>
+                  {{ metaPolicy.text }}
+                </p>
+              </section>
+
+              <section v-if="synergySections.length" class="synergy-basis">
+                <header class="synergy-head">
+                  <h3><Layers :size="16" />组合协同与结构</h3>
+                  <span>按英雄功能标签计算 · 不依赖模型判断</span>
+                </header>
+                <div class="synergy-rows">
+                  <div v-for="team in synergySections" :key="team.side" class="synergy-row" :class="team.side">
+                    <span class="synergy-side">{{ team.name }}</span>
+                    <div class="synergy-main">
+                      <div
+                        v-for="combo in team.cards"
+                        :key="`${combo.name}-${combo.heroes.join()}`"
+                        class="combo-card"
+                        :class="combo.tier"
+                      >
+                        <div class="combo-top">
+                          <span class="combo-tier">{{ combo.tier === 'strong' ? '强协同' : '条件协同' }}</span>
+                          <b>{{ combo.heroes.join(' + ') }}</b>
+                          <span class="combo-name">{{ combo.name }}</span>
+                          <span v-if="combo.source === 'derived'" class="combo-src">机制推导</span>
+                        </div>
+                        <p v-if="combo.note?.impact" class="combo-impact">{{ combo.note.impact }}</p>
+                        <p v-else class="combo-impact">{{ combo.mechanism }}</p>
+                        <p v-if="combo.note?.counter" class="combo-counter">对手应对：{{ combo.note.counter }}</p>
+                      </div>
+
+                      <div v-for="item in team.broken" :key="`${item.held}-${item.missing}`" class="combo-broken">
+                        <span>被拆</span>
+                        <p><b>{{ item.held }}</b> 的「{{ item.name }}」因 <b>{{ item.missing }}</b> 被禁用而无法成立</p>
+                      </div>
+
+                      <p v-if="!team.cards.length && !team.broken.length" class="combo-empty">未形成记录在案的成型搭配</p>
+
+                      <div class="struct-metrics">
+                        <span>前排 <b>{{ team.structure.front }}</b>/15</span>
+                        <span>硬开团 <b>{{ team.structure.engageCount }}</b></span>
+                        <span>保人 <b>{{ team.structure.peelCount }}</b></span>
+                        <span>消耗 <b>{{ team.structure.pokeScore }}</b></span>
+                        <span>控制 <b>{{ team.structure.controlScore }}</b></span>
+                        <span>机动 <b>{{ team.structure.mobilityAvg }}</b></span>
+                      </div>
+
+                      <ul class="struct-findings">
+                        <li v-for="finding in team.topFindings" :key="finding.title" :class="finding.level">
+                          <b>{{ finding.title }}</b>
+                          <em>{{ finding.detail }}</em>
+                        </li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+                <ul v-if="crossNotes.length" class="synergy-cross">
+                  <li v-for="note in crossNotes" :key="note">{{ note }}</li>
+                </ul>
+              </section>
+
+              <section v-if="statsBasis" class="stats-basis">
+                <header class="stats-head">
+                  <h3><Database :size="16" />分析依据</h3>
+                  <span>{{ statsBasis.seasonName }} · {{ statsBasis.seasonRange }} · 数据截至 {{ statsBasis.fetchedAt }}</span>
+                </header>
+                <div class="stats-rows">
+                  <div v-for="team in basisSections" :key="team.side" class="stats-row" :class="team.side">
+                    <span class="stats-side">{{ team.name }}</span>
+                    <div class="stats-chips">
+                      <div
+                        v-for="hero in team.data.picks"
+                        :key="hero.heroId"
+                        class="stat-chip"
+                        :class="{ thin: hero.games > 0 && hero.games < 15 }"
+                        :title="hero.lane ? `${hero.job} · ${hero.lane}` : hero.job"
+                      >
+                        <b>{{ hero.name }}</b>
+                        <span v-if="hero.games" :class="rateClass(hero.winRate)">{{ hero.games }} 场 · {{ hero.winRate }}%</span>
+                        <span v-else class="stat-none">未登场</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <p class="stats-note">
+                  数据来自 {{ statsBasis.source }}，为职业赛事样本；虚线框表示出场不足 15 场。胜率同时受队伍实力影响，不等同于英雄强度。
+                </p>
+              </section>
+            </div>
+          </details>
 
           <div class="review-footer">
             <span>AI 结论仅供阵容讨论，实际对局还受选手状态、版本与执行影响。</span>
