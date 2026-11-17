@@ -2,9 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import {
   ArrowRight,
-  Bot,
   BrainCircuit,
-  ChevronDown,
   ChevronLeft,
   Download,
   Eye,
@@ -14,24 +12,25 @@ import {
   ShieldBan,
   Swords,
 } from 'lucide-vue-next'
+import AiCandidatePanel from './components/AiCandidatePanel.vue'
 import HeroPool from './components/HeroPool.vue'
 import LineupBoard from './components/LineupBoard.vue'
 import ReviewModal from './components/ReviewModal.vue'
 import SetupScreen from './components/SetupScreen.vue'
 import TeamPanel from './components/TeamPanel.vue'
+import { useAiTurn } from './composables/useAiTurn'
 import { useDraft } from './composables/useDraft'
 import heroesData from './data/heroes.json'
-import { CLASS_NAMES, LANE_NAMES } from './data/meta'
+import { heroLaneLabel } from './data/meta'
 import { getSteps } from './engine/draft'
-import type { AiDraftCandidate, AiDraftResult, Game, Hero, SeriesSettings, SeriesSnapshot, Side } from './types'
+import type { Game, Hero, SeriesSettings, SeriesSnapshot, Side } from './types'
 
 const heroes = heroesData as Hero[]
 const heroMap = new Map(heroes.map((hero) => [hero.id, hero]))
+const draft = useDraft(heroes)
 const {
   settings,
   previousGames,
-  seriesSeed,
-  seriesIndex,
   currentGame,
   blueName,
   redName,
@@ -60,22 +59,13 @@ const {
   autoLanes,
   lineupPayload,
   exportSeries,
-} = useDraft(heroes)
+} = draft
+const { aiThinking, aiNote, aiStyle, aiShortlist, aiChosenId, runAiTurn, cancelAi } = useAiTurn(heroes, draft)
 
 const screen = ref<'lobby' | 'draft'>('lobby')
-const aiThinking = ref(false)
-const aiNote = ref('')
-/** AI 本局思路，由服务端按系列赛种子与局号决定 */
-const aiStyle = ref<{ key: string; label: string; summary: string } | null>(null)
-/** 上一手的候选池（服务端已按整队评分排序），用于说明 AI 为什么选这个 */
-const aiShortlist = ref<AiDraftCandidate[]>([])
-const aiChosenId = ref(0)
-const aiCandOpen = ref(false)
 const reviewOpen = ref(false)
 const aiConfigured = ref(false)
 const aiModel = ref('deepseek-chat')
-// 每次 AI 请求持有一个令牌，局面变化后旧响应自动作废
-let aiToken = 0
 
 const isAiGame = computed(() => settings.opponent === 'ai')
 const aiName = computed(() => (settings.humanSide === 'blue' ? redName.value : blueName.value))
@@ -84,39 +74,6 @@ const modeLabel = computed(() => (settings.mode === 'global' ? 'KPL 全局 BP' :
 const rulesetLabel = computed(() => (settings.ruleset === 'kpl2026' ? 'KPL 2026 · 5 Ban' : '经典 · 4 Ban'))
 const poolLocked = computed(() => isAiGame.value && (aiThinking.value || aiTurn.value))
 const aiThinkingLabel = computed(() => (aiStyle.value ? `${aiName.value} 正在按「${aiStyle.value.label}」思考` : `${aiName.value} 正在思考`))
-
-// 候选池按整队评分排过序，名次差与分差能说明模型有没有偏离程序给出的最优解
-const aiChosenRank = computed(() => {
-  const index = aiShortlist.value.findIndex((item) => item.heroId === aiChosenId.value)
-  return index < 0 ? 0 : index + 1
-})
-const aiScoreGap = computed(() => {
-  const top = aiShortlist.value[0]
-  const chosen = aiShortlist.value.find((item) => item.heroId === aiChosenId.value)
-  return top && chosen ? Math.max(0, top.score - chosen.score) : 0
-})
-const aiCandCaption = computed(() => {
-  const total = aiShortlist.value.length
-  if (!total) return ''
-  if (!aiChosenRank.value) return `共 ${total} 个候选`
-  // 同一套五人方案会推出多个同分候选，名次在这些同分项之间没有意义，按分差说更准确
-  const ties = aiShortlist.value.filter((item) => item.score === aiShortlist.value[0].score).length
-  if (aiScoreGap.value > 0) {
-    return `共 ${total} 个候选 · 按整队评分排序，AI 选中第 ${aiChosenRank.value}，比最高分低 ${aiScoreGap.value}`
-  }
-  return ties > 1
-    ? `共 ${total} 个候选 · AI 选中最高分（与另外 ${ties - 1} 个同分）`
-    : `共 ${total} 个候选 · AI 选中的就是最高分`
-})
-const avatarOf = (heroId: number) => heroMap.get(heroId)?.avatar || ''
-// 多个候选常常指向同一套五人阵容（谁先拿都行），整套方案重复打印反而看不清，只标一次。
-// 键要先排序：同一套阵容在不同候选里出场顺序可能不同，直接拼接会判成两套。
-const planKeyOf = (cand: AiDraftCandidate) => [...(cand.lineup || cand.banTarget || [])].sort().join('|')
-const isDuplicatePlan = (index: number) => {
-  const key = planKeyOf(aiShortlist.value[index])
-  if (!key) return false
-  return aiShortlist.value.slice(0, index).some((item) => planKeyOf(item) === key)
-}
 
 const toHeroes = (ids: number[]) => ids.map((id) => heroMap.get(id)).filter((hero): hero is Hero => Boolean(hero))
 const bluePicks = computed(() => toHeroes(sidePicks('blue')))
@@ -254,8 +211,7 @@ function startDraft() {
 
 function backToSetup() {
   if (hasAnyProgress() && !window.confirm('返回设置会清空当前系列赛，是否继续？')) return
-  aiToken += 1
-  aiThinking.value = false
+  cancelAi()
   resetSeries()
   aiNote.value = ''
   aiStyle.value = null
@@ -269,84 +225,6 @@ function handleUndo() {
   aiNote.value = ''
   aiShortlist.value = []
   aiChosenId.value = 0
-}
-
-async function runAiTurn() {
-  if (!aiTurn.value || aiThinking.value) return
-  const token = (aiToken += 1)
-  const expected = currentGame.value.actions.length
-  const side = activeSide.value
-  const type = activeType.value
-  aiThinking.value = true
-  selectedHeroId.value = null
-
-  let advanced = false
-  try {
-    const available = heroes.filter((hero) => !unavailableReasons.value[hero.id]).map((hero) => hero.id)
-    const controller = new AbortController()
-    const timer = window.setTimeout(() => controller.abort(), 30000)
-    const response = await fetch('/api/ai-draft', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      signal: controller.signal,
-      body: JSON.stringify({
-        settings: { ...settings },
-        blueName: blueName.value,
-        redName: redName.value,
-        currentGame: currentGame.value,
-        previousGames: previousGames.value,
-        available,
-        side,
-        type,
-        seed: seriesSeed.value,
-        seriesIndex: seriesIndex.value,
-      }),
-    }).finally(() => window.clearTimeout(timer))
-
-    const result = (await response.json().catch(() => null)) as AiDraftResult | null
-    if (token !== aiToken) return
-    if (currentGame.value.actions.length !== expected) return
-    if (!response.ok || !result?.heroId) throw new Error(result?.error || 'AI 未返回选择')
-
-    aiNote.value = result.reason || ''
-    if (result.style) aiStyle.value = result.style
-    // 候选池原样来自服务端：已按整队评分排序，含每人的五人方案或禁用收益
-    aiShortlist.value = Array.isArray(result.shortlist) ? result.shortlist : []
-    aiChosenId.value = Number(result.heroId)
-    confirmHero(Number(result.heroId))
-    advanced = currentGame.value.actions.length > expected
-    if (currentGame.value.isPeak && sidePicks(aiSide.value).length >= 5) {
-      peakSide.value = settings.humanSide
-    }
-  } catch {
-    if (token !== aiToken) return
-    // 兜底：宁可随机落子也不让对局卡在 AI 回合
-    if (currentGame.value.actions.length === expected) {
-      aiNote.value = 'AI 决策超时，已按备用方案落子'
-      // 超时兜底不是 AI 的判断，候选池一并清掉，免得把上一次的依据挂在这一次头上
-      aiShortlist.value = []
-      aiChosenId.value = 0
-      const availableHeroes = heroes.filter((hero) => !unavailableReasons.value[hero.id])
-      let pool = availableHeroes
-      if (type === 'pick') {
-        // 选人兜底优先补我方缺的路，别按数据库顺序送第一个英雄
-        const aiLanes = new Set(sidePicks(aiSide.value).map((id) => heroMap.get(id)?.laneIds?.[0]))
-        const fillsGap = availableHeroes.filter((hero) => hero.laneIds?.[0] != null && !aiLanes.has(hero.laneIds[0]))
-        if (fillsGap.length) pool = fillsGap
-      }
-      const fallback = pool[Math.floor(Math.random() * pool.length)]
-      if (fallback) {
-        confirmHero(fallback.id)
-        advanced = currentGame.value.actions.length > expected
-      }
-    }
-  } finally {
-    if (token === aiToken) {
-      aiThinking.value = false
-      // 对手连续两手时，落子后仍然轮到它，需要接着走
-      if (advanced && aiTurn.value) window.setTimeout(() => void runAiTurn(), 260)
-    }
-  }
 }
 
 watch(
@@ -503,49 +381,16 @@ onMounted(async () => {
           <span v-else><Eye :size="14" />双方阵容已揭晓</span>
         </div>
 
-        <div v-if="isAiGame && aiNote" class="ai-note-line" :class="aiSide">
-          <Bot :size="13" />
-          <span class="ai-note-text"><b>{{ aiName }}</b> 上一手：{{ aiNote }}</span>
-          <button
-            v-if="aiShortlist.length"
-            class="ai-cand-toggle"
-            :class="{ open: aiCandOpen }"
-            :title="aiCandOpen ? '收起候选依据' : '看看它在哪几个里挑的'"
-            @click="aiCandOpen = !aiCandOpen"
-          >
-            候选依据 {{ aiShortlist.length }}<ChevronDown :size="11" />
-          </button>
-          <span v-if="aiStyle" class="ai-style-chip" :title="aiStyle.summary">本局思路 · {{ aiStyle.label }}</span>
-        </div>
-
-        <div v-if="aiCandOpen && aiShortlist.length" class="ai-cand-panel" :class="aiSide">
-          <div class="ai-cand-head">
-            <span>{{ aiCandCaption }}</span>
-            <span class="ai-cand-hint">评分是五人整队综合分，不是单个英雄强度</span>
-          </div>
-          <ul class="ai-cand-list">
-            <li
-              v-for="(cand, index) in aiShortlist"
-              :key="cand.heroId"
-              class="ai-cand-row"
-              :class="{ chosen: cand.heroId === aiChosenId }"
-            >
-              <span class="ai-cand-rank">{{ index + 1 }}</span>
-              <img class="ai-cand-avatar" :src="avatarOf(cand.heroId)" :alt="cand.name" loading="lazy" />
-              <span class="ai-cand-name">{{ cand.name }}</span>
-              <span class="ai-cand-lane">{{ cand.lane }}</span>
-              <span class="ai-cand-score">{{ cand.score }}</span>
-              <span v-if="cand.heroId === aiChosenId" class="ai-cand-badge">AI 选中</span>
-              <span v-if="cand.banImpact !== null" class="ai-cand-impact">禁后对手整队 −{{ cand.banImpact }}</span>
-              <p class="ai-cand-body">
-                <span v-if="isDuplicatePlan(index) && (cand.lineup || cand.banTarget)" class="ai-cand-plan dup">同一套五人阵容</span>
-                <span v-else-if="cand.lineup" class="ai-cand-plan">凑成：{{ cand.lineup.join('、') }}</span>
-                <span v-else-if="cand.banTarget" class="ai-cand-plan">对手原本能凑成：{{ cand.banTarget.join('、') }}</span>
-                <span v-if="cand.reasons.length" class="ai-cand-reasons">{{ cand.reasons.join('；') }}</span>
-              </p>
-            </li>
-          </ul>
-        </div>
+        <AiCandidatePanel
+          v-if="isAiGame"
+          :note="aiNote"
+          :style="aiStyle"
+          :shortlist="aiShortlist"
+          :chosen-id="aiChosenId"
+          :side="aiSide"
+          :name="aiName"
+          :heroes="heroes"
+        />
 
         <HeroPool
           v-if="!complete"
@@ -587,7 +432,7 @@ onMounted(async () => {
                 <span>当前{{ activeType === 'ban' ? '禁用' : '选择' }} · {{ sideName(activeSide) }}</span>
                 <strong>{{ selectedHero.name }}</strong>
               </div>
-              <em class="selected-tag">{{ CLASS_NAMES[selectedHero.classId] }} · {{ selectedHero.laneIds.map(id => LANE_NAMES[id]).join(' / ') }}</em>
+              <em class="selected-tag">{{ heroLaneLabel(selectedHero) }}</em>
             </div>
             <div v-else class="selection-placeholder">
               <span class="mouse-icon" />

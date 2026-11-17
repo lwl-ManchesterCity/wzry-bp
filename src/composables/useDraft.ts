@@ -53,6 +53,7 @@ function bumpSeriesIndex() {
 }
 
 export function useDraft(heroes: Hero[]) {
+  const heroMap = new Map(heroes.map((hero) => [hero.id, hero]))
   const settings = reactive<SeriesSettings>({
     mode: 'global',
     format: 7,
@@ -82,7 +83,6 @@ export function useDraft(heroes: Hero[]) {
     currentGame.value.isPeak ? 'pick' : currentStep.value?.type ?? 'pick'
   ))
   const complete = computed(() => isDraftComplete(currentGame.value, settings.ruleset))
-  const hasProgress = computed(() => previousGames.value.length > 0 || currentGame.value.actions.length > 0)
   /** 人机对战时模型执掌的一方 */
   const aiSide = computed<Side>(() => (settings.humanSide === 'blue' ? 'red' : 'blue'))
   /** 当前这一步是否轮到模型出手 */
@@ -110,13 +110,6 @@ export function useDraft(heroes: Hero[]) {
     seriesIndex.value = bumpSeriesIndex()
     currentGame.value = createGame(1, settings.format)
     clearTransientState()
-  }
-
-  function changeSetting<K extends keyof SeriesSettings>(key: K, value: SeriesSettings[K]) {
-    if (settings[key] === value) return
-    if (hasProgress.value && !window.confirm('更改赛制或规则将清空当前系列赛，是否继续？')) return
-    settings[key] = value
-    resetSeries()
   }
 
   function reasonFor(hero: Hero, side = activeSide.value, type = activeType.value) {
@@ -199,7 +192,7 @@ export function useDraft(heroes: Hero[]) {
 
   function picksOf(side: Side) {
     return sidePicks(side)
-      .map((id) => heroes.find((hero) => hero.id === id))
+      .map((id) => heroMap.get(id))
       .filter((hero): hero is Hero => Boolean(hero))
   }
 
@@ -216,10 +209,6 @@ export function useDraft(heroes: Hero[]) {
   /** 回到自动排布 */
   function autoLanes(side: Side) {
     manualLanes[side] = {}
-  }
-
-  function hasManualLanes(side: Side) {
-    return Object.keys(manualLanes[side]).length > 0
   }
 
   /** 发给复盘的 heroId -> laneId，双方都带上，服务端不再自己猜 */
@@ -274,7 +263,6 @@ export function useDraft(heroes: Hero[]) {
     resetCurrentGame,
     resetSeries,
     nextGame,
-    changeSetting,
     removePeakHero,
     globalUsed,
     sidePicks,
@@ -282,7 +270,6 @@ export function useDraft(heroes: Hero[]) {
     laneMap,
     assignLane,
     autoLanes,
-    hasManualLanes,
     lineupPayload,
     exportSeries,
   }

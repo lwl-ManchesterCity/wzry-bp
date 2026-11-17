@@ -1,3 +1,5 @@
+import type { Hero } from '../types'
+
 export const HERO_CLASSES = [
   { id: 0, label: '全部职业' },
   { id: 3, label: '坦克' },
@@ -32,4 +34,9 @@ export const LANE_NAMES: Record<number, string> = {
   3: '中路',
   4: '发育路',
   5: '游走',
+}
+
+/** 英雄卡片/侧栏/排布面板共用的「职业 · 分路」标签 */
+export function heroLaneLabel(hero: Hero): string {
+  return `${CLASS_NAMES[hero.classId]} · ${hero.laneIds.map((id) => LANE_NAMES[id]).join(' / ')}`
 }

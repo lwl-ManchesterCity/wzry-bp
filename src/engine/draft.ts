@@ -110,8 +110,19 @@ export function getGlobalUsedIds(previousGames: Game[], side: Side): Set<number>
   )
 }
 
+// 英雄表在同一会话里是同一份数组引用；按引用缓存 Map，避免每个英雄每次可用性判定都重建一遍
+const heroMapCache = new WeakMap<Hero[], Map<number, Hero>>()
+function heroMapFor(heroes: Hero[]): Map<number, Hero> {
+  let map = heroMapCache.get(heroes)
+  if (!map) {
+    map = new Map(heroes.map((hero) => [hero.id, hero]))
+    heroMapCache.set(heroes, map)
+  }
+  return map
+}
+
 export function getGlobalUsedGroups(previousGames: Game[], side: Side, heroes: Hero[]): Set<string> {
-  const heroMap = new Map(heroes.map((hero) => [hero.id, hero]))
+  const heroMap = heroMapFor(heroes)
   const groups = new Set<string>()
   for (const id of getGlobalUsedIds(previousGames, side)) {
     const hero = heroMap.get(id)
@@ -137,15 +148,16 @@ export function getUnavailableReason(input: AvailabilityInput): string | null {
     if (type === 'ban') return '巅峰对决无禁用阶段'
     const ownPicks = getSideHeroIds(game, side, 'pick')
     if (ownPicks.includes(hero.id)) return '本队已选择'
+    const heroMap = heroMapFor(heroes)
     const ownGroups = new Set(
-      ownPicks.map((id) => heroes.find((item) => item.id === id)?.pickGroup).filter(Boolean),
+      ownPicks.map((id) => heroMap.get(id)?.pickGroup).filter(Boolean),
     )
     if (ownGroups.has(hero.pickGroup)) return '元流之子每队仅可选择一个职业'
     if (ownPicks.length >= 5) return '本队阵容已满'
     return null
   }
 
-  const heroMap = new Map(heroes.map((item) => [item.id, item]))
+  const heroMap = heroMapFor(heroes)
   const existingAction = game.actions.find((action) => action.heroId === hero.id)
   if (existingAction) return existingAction.type === 'ban' ? '本局已禁用' : '本局已选择'
 

@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { EyeOff, History, ShieldBan, X } from 'lucide-vue-next'
-import { CLASS_NAMES, LANE_NAMES, LANES } from '../data/meta'
+import { LANES, heroLaneLabel } from '../data/meta'
+import { setHeroDrag } from '../engine/dragPayload'
 import type { ActionType, Hero, Side } from '../types'
 
 const props = defineProps<{
@@ -39,10 +40,7 @@ function onNameInput(event: Event) {
 
 /** 侧栏英雄也能拖到分路面板上，避免只能从面板内部拖 */
 function onDragStart(event: DragEvent, hero: Hero) {
-  const payload = `${props.side}:${hero.id}`
-  event.dataTransfer?.setData('application/x-bp-hero', payload)
-  event.dataTransfer?.setData('text/plain', payload)
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+  if (event.dataTransfer) setHeroDrag(event.dataTransfer, props.side, hero.id)
 }
 </script>
 
@@ -87,7 +85,7 @@ function onDragStart(event: DragEvent, hero: Hero) {
           <div class="pick-meta">
             <span class="pick-index">0{{ index + 1 }}</span>
             <strong>{{ hero.name }}</strong>
-            <span>{{ CLASS_NAMES[hero.classId] }} · {{ hero.laneIds.map(id => LANE_NAMES[id]).join(' / ') }}</span>
+            <span>{{ heroLaneLabel(hero) }}</span>
           </div>
           <button
             v-if="isPeak && revealPending"

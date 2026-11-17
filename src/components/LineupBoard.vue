@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { GripVertical, LayoutGrid, Wand2 } from 'lucide-vue-next'
-import { CLASS_NAMES, LANE_NAMES, LANES } from '../data/meta'
+import { LANES, heroLaneLabel } from '../data/meta'
+import { readHeroDrag, setHeroDrag } from '../engine/dragPayload'
 import type { Hero, Side } from '../types'
 
 const props = defineProps<{
@@ -63,22 +64,16 @@ function laneTag(hero: Hero, laneId: number) {
 }
 
 function onDragStart(event: DragEvent, side: Side, heroId: number) {
-  const payload = `${side}:${heroId}`
-  event.dataTransfer?.setData('application/x-bp-hero', payload)
-  event.dataTransfer?.setData('text/plain', payload)
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move'
+  if (event.dataTransfer) setHeroDrag(event.dataTransfer, side, heroId)
   picked.value = { side, heroId }
 }
 
 function onDrop(event: DragEvent, side: Side, laneId: number) {
   hoverKey.value = ''
   if (isHidden(side)) return
-  const raw = event.dataTransfer?.getData('application/x-bp-hero')
-    || event.dataTransfer?.getData('text/plain')
-    || ''
-  const [fromSide, heroId] = raw.split(':')
-  if (fromSide !== side || !heroId) return
-  emit('assign', side, laneId, Number(heroId))
+  const drag = readHeroDrag(event.dataTransfer)
+  if (!drag || drag.side !== side) return
+  emit('assign', side, laneId, drag.heroId)
   picked.value = null
 }
 
@@ -143,7 +138,7 @@ function isPicked(side: Side, heroId: number) {
             <img :src="row.blue.avatar" :alt="row.blue.name">
             <div class="lineup-hero-meta">
               <strong>{{ row.blue.name }}</strong>
-              <span>{{ CLASS_NAMES[row.blue.classId] }} · {{ row.blue.laneIds.map(id => LANE_NAMES[id]).join(' / ') }}</span>
+              <span>{{ heroLaneLabel(row.blue) }}</span>
             </div>
             <em class="lineup-tag" :class="laneTag(row.blue, row.id).tone">{{ laneTag(row.blue, row.id).text }}</em>
             <GripVertical :size="13" class="lineup-grip" />
@@ -173,7 +168,7 @@ function isPicked(side: Side, heroId: number) {
             <em class="lineup-tag" :class="laneTag(row.red, row.id).tone">{{ laneTag(row.red, row.id).text }}</em>
             <div class="lineup-hero-meta">
               <strong>{{ row.red.name }}</strong>
-              <span>{{ CLASS_NAMES[row.red.classId] }} · {{ row.red.laneIds.map(id => LANE_NAMES[id]).join(' / ') }}</span>
+              <span>{{ heroLaneLabel(row.red) }}</span>
             </div>
             <img :src="row.red.avatar" :alt="row.red.name">
           </div>
