@@ -429,6 +429,67 @@ export function checkVerdictConsistency(review, closure = null, meta = null) {
   return { ok: issues.length === 0, issues }
 }
 
+/** 提示词里声明为强制的硬约束，模型违反时按程序事实纠正；其余仍只标记 */
+export function repairReviewConsistency(review, closure = null, meta = null) {
+  const repairs = []
+  const verdict = review?.verdict
+  if (!verdict) return repairs
+
+  const keptFactors = []
+  for (const text of review.keyFactors || []) {
+    if (!String(text).includes('版本')) {
+      keptFactors.push(text)
+      continue
+    }
+    const blueAdv = /蓝(方|色方)?[^，。；;]*?(占优|领先|更高)/.test(text)
+    const redAdv = /红(方|色方)?[^，。；;]*?(占优|领先|更高)/.test(text)
+    if (blueAdv && !redAdv) review.blue.strengths.push(text)
+    else if (redAdv && !blueAdv) review.red.strengths.push(text)
+    repairs.push(`版本强度移出胜负因素：${text}`)
+  }
+  review.keyFactors = keptFactors
+
+  const hint = closure?.hint
+  const target = hint?.active && hint.side ? hint.side : closure?.paths?.side || null
+  if (target && verdict.favoredSide !== 'even' && verdict.favoredSide !== target) {
+    verdict.favoredSide = target
+    verdict.blueWinRate = 100 - verdict.blueWinRate
+    verdict.redWinRate = 100 - verdict.blueWinRate
+    repairs.push(`倾向与程序结论相反，已改为${SIDE_NAME[target]}`)
+  }
+  if (verdict.favoredSide === 'blue' && verdict.blueWinRate < 50) {
+    verdict.blueWinRate = 100 - verdict.blueWinRate
+    verdict.redWinRate = 100 - verdict.blueWinRate
+    repairs.push('百分比与蓝方倾向不自洽，已镜像')
+  }
+  if (verdict.favoredSide === 'red' && verdict.blueWinRate > 50) {
+    verdict.blueWinRate = 100 - verdict.blueWinRate
+    verdict.redWinRate = 100 - verdict.blueWinRate
+    repairs.push('百分比与红方倾向不自洽，已镜像')
+  }
+  if (verdict.favoredSide === 'even' && verdict.blueWinRate !== 50) {
+    verdict.blueWinRate = 50
+    verdict.redWinRate = 50
+    repairs.push('判双方接近但百分比不是 50:50，已归中')
+  }
+
+  if (meta?.policy?.sampleReady === false) {
+    const fix = (value) => String(value).replace(/版本(层|强度)?占优/g, '版本层样本不足本轮不参与裁决')
+    const before = JSON.stringify([verdict.summary, review.blue, review.red, review.keyFactors])
+    verdict.summary = fix(verdict.summary)
+    for (const team of [review.blue, review.red]) {
+      team.strengths = team.strengths.map(fix)
+      team.weaknesses = team.weaknesses.map(fix)
+    }
+    review.keyFactors = review.keyFactors.map(fix)
+    if (JSON.stringify([verdict.summary, review.blue, review.red, review.keyFactors]) !== before) {
+      repairs.push('有效样本不足仍写「版本层占优」，已改为样本不足口径')
+    }
+  }
+
+  return repairs
+}
+
 export {
   FRONT_MIN,
   ENGAGE_MIN,

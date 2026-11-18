@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { createSynergyEngine } from '../server/synergy.mjs'
-import { judgeComposition, compareComposition, judgeWinPaths, metaUsagePolicy, checkVerdictConsistency } from '../server/composition.mjs'
+import { judgeComposition, compareComposition, judgeWinPaths, metaUsagePolicy, checkVerdictConsistency, repairReviewConsistency } from '../server/composition.mjs'
 import { createMetaModel } from '../server/meta-strength.mjs'
 import type { Hero } from '../src/types'
 
@@ -317,5 +317,61 @@ describe('verdict 一致性校验', () => {
   it('缺 verdict 或缺程序结论时不抛错', () => {
     expect(checkVerdictConsistency(null)).toEqual({ ok: true, issues: [] })
     expect(checkVerdictConsistency(review(), null, null).ok).toBe(true)
+  })
+
+  it('版本强度进胜负因素时移出并归到占优一方的优势里', () => {
+    const value = review({ keyFactors: ['蓝方保护链成型', '版本强度蓝方占优 16 分'] })
+    const repairs = repairReviewConsistency(value, closure, meta)
+    expect(value.keyFactors).toEqual(['蓝方保护链成型'])
+    expect(value.blue.strengths).toContain('版本强度蓝方占优 16 分')
+    expect(repairs).toHaveLength(1)
+    expect(checkVerdictConsistency(value, closure, meta).ok).toBe(true)
+  })
+
+  it('中性的版本背景句只移出、不塞进任何一方', () => {
+    const value = review({ keyFactors: ['版本强度双方接近（42:40）'] })
+    repairReviewConsistency(value, closure, meta)
+    expect(value.keyFactors).toEqual([])
+    expect(value.blue.strengths).toEqual([])
+    expect(value.red.strengths).toEqual([])
+  })
+
+  it('倾向与体系提示相反时镜像百分比改判', () => {
+    const value = verdict({ favoredSide: 'red', blueWinRate: 38, redWinRate: 62 })
+    const repairs = repairReviewConsistency(value, closure, meta)
+    expect(value.verdict.favoredSide).toBe('blue')
+    expect(value.verdict.blueWinRate).toBe(62)
+    expect(value.verdict.redWinRate).toBe(38)
+    expect(repairs.some((text) => text.includes('蓝方'))).toBe(true)
+    expect(checkVerdictConsistency(value, closure, meta).ok).toBe(true)
+  })
+
+  it('百分比与倾向不自洽时镜像归位', () => {
+    const value = verdict({ favoredSide: 'blue', blueWinRate: 40, redWinRate: 60 })
+    repairReviewConsistency(value, closure, meta)
+    expect(value.verdict.blueWinRate).toBe(60)
+    expect(value.verdict.redWinRate).toBe(40)
+  })
+
+  it('判双方接近但百分比偏斜时归中 50:50', () => {
+    const value = verdict({ favoredSide: 'even', blueWinRate: 55, redWinRate: 45 })
+    repairReviewConsistency(value, closure, meta)
+    expect(value.verdict.blueWinRate).toBe(50)
+    expect(value.verdict.redWinRate).toBe(50)
+  })
+
+  it('样本不足仍写版本层占优时改成样本不足口径', () => {
+    const thin = metaOf([525, 114, 109], RED, 0)
+    const value = review({ blue: { strengths: ['版本层占优 16 分'], weaknesses: [], gameplan: [], keyTiming: '' } })
+    const repairs = repairReviewConsistency(value, closure, thin)
+    expect(value.blue.strengths[0]).toBe('版本层样本不足本轮不参与裁决 16 分')
+    expect(repairs.some((text) => text.includes('样本不足'))).toBe(true)
+    expect(checkVerdictConsistency(value, closure, thin).ok).toBe(true)
+  })
+
+  it('没有违规时不做任何纠正', () => {
+    const value = review()
+    expect(repairReviewConsistency(value, closure, meta)).toEqual([])
+    expect(value.keyFactors).toEqual(['蓝方保护链成型'])
   })
 })

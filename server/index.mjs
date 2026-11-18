@@ -7,7 +7,7 @@ import { createSynergyEngine, RADAR_KEYS } from './synergy.mjs'
 import { AXIS_LABEL, createMatchupModel } from './matchup.mjs'
 import { buildDecisionContext, createDraftAdvisor } from './ai-draft.mjs'
 import { createMetaModel, describeMembers } from './meta-strength.mjs'
-import { judgeComposition, compareComposition, metaUsagePolicy, checkVerdictConsistency } from './composition.mjs'
+import { judgeComposition, compareComposition, metaUsagePolicy, checkVerdictConsistency, repairReviewConsistency } from './composition.mjs'
 import { toCandidateView } from './candidate-view.mjs'
 import { DRAFT_STYLES, seededUnit, styleForGame } from '../shared/styles.mjs'
 
@@ -814,7 +814,8 @@ app.post('/api/review', async (request, response) => {
         ]
       : []
     const review = normalizeReview(parsed, detectedCombos, allowedKeys)
-    // 倾向仍由模型给，这里只比对它有没有违背程序算出的硬结论
+    // 硬约束（版本不进胜负因素、倾向跟随体系/路径提示）按程序事实纠正，其余只标记
+    review.repairs = repairReviewConsistency(review, analysis?.closure, analysis?.meta)
     review.consistency = checkVerdictConsistency(review, analysis?.closure, analysis?.meta)
     return response.json({
       review,

@@ -10,10 +10,10 @@
  */
 
 import { DRAFT_STYLES, seededUnit } from '../shared/styles.mjs'
+import { solveLineup, LANE_LABEL } from '../shared/lanes.mjs'
 import { createTeamPlanner } from './team-planner.mjs'
 
 const LANE_BY_ID = { 1: '对抗路', 2: '打野', 3: '中路', 4: '发育路', 5: '游走' }
-const ALL_LANES = ['对抗路', '中路', '发育路', '打野', '游走']
 const DAMAGE_LABEL = { phys: '物理', magic: '法术', true: '真实', mixed: '混合' }
 
 const TRAIT_LABEL = {
@@ -209,20 +209,23 @@ export function createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine, s
 
     if (!synergyEngine) return { id, name: hero?.name || String(id), score, reasons, lane: laneOf(id) }
 
-    // 同一分路只有一个出场名额：第二个射手/第二个辅助根本站不上场，
-    // 组合协同分必须按「能不能真的出场」折算，否则会算出禁对方第二个射手的荒谬结论
-    const lane = laneOf(id)
-    const occupant = teamPicks
-      .map(Number)
-      .find((other) => Number(other) !== id && laneOf(other) === lane)
-    const laneBlocked = Boolean(occupant)
+    // 分路落位与排布面板同一套整队求解：多路英雄能走副路出场，
+    // 只有被挤到未列出的补位路才算「站不上」，组合分按此折算。
+    // 已选英雄锁定在各自落位上：评估「再加一手」时不该把已选的人挤去补位、
+    // 把空出来的主路让给候选（同分 ties 会这样），否则满员路会被误判成还能塞人。
+    const incumbentLineup = solveLineup(teamPicks.map((other) => heroMap.get(Number(other))).filter(Boolean))
+    const fixedByHero = {}
+    for (const [lane, heroId] of Object.entries(incumbentLineup)) fixedByHero[Number(heroId)] = Number(lane)
+    const roster = [...teamPicks.map(Number), id]
+    const lineup = solveLineup(roster.map((other) => heroMap.get(other)).filter(Boolean), fixedByHero)
+    const laneId = Number(Object.keys(lineup).find((lane) => Number(lineup[lane]) === id))
+    const lane = LANE_LABEL[laneId] || ''
+    const laneBlocked = !(hero?.laneIds || []).map(Number).includes(laneId)
     let comboFactor = 1
     if (laneBlocked) {
-      // 禁人场景下，若对方该路现有英雄不比候选弱，候选即便被禁也无损失，收益归零
-      const upgrade = strength.score - strengthScore(occupant).score
-      comboFactor = mode === 'ban' && upgrade <= 0 ? 0 : 0.25
+      comboFactor = mode === 'ban' ? 0 : 0.25
       if (mode === 'ban') {
-        reasons.push(`对方${lane}已有${heroMap.get(occupant)?.name || ''}，禁他收益很低`)
+        reasons.push(`他加入对方只能补${lane || '位'}，禁他收益很低`)
       }
     }
 
@@ -286,14 +289,13 @@ export function createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine, s
       reasons.push('补充控制链')
     }
 
-    // 分路覆盖：前两手之后才开始要求补位，否则没有区分度
+    // 分路覆盖：前两手之后才开始要求补位，否则没有区分度。
+    // 已选英雄锁定落位后，候选必然落在空路：列出路＝真补位，未列出路＝被挤去补位
     if (mode !== 'ban' && teamPicks.length >= 2 && lane) {
-      const taken = teamPicks.map(laneOf).filter(Boolean)
-      const gaps = ALL_LANES.filter((item) => !taken.includes(item))
-      if (gaps.includes(lane)) {
+      if (!laneBlocked) {
         score += 22
         reasons.push(`补${lane}位`)
-      } else if (taken.includes(lane)) {
+      } else {
         score -= 12
       }
     }
@@ -323,7 +325,7 @@ export function createDraftAdvisor({ heroes, heroMap, kplStats, synergyEngine, s
   }
 
   const teamPlanner = synergyEngine
-    ? createTeamPlanner({ heroes, heroMap, synergyEngine, synergy, macro, laneOf, strengthScore, styleScore })
+    ? createTeamPlanner({ heroes, heroMap, synergyEngine, synergy, macro, strengthScore, styleScore })
     : null
 
   /**

@@ -50,6 +50,7 @@ const favoredText = computed(() => {
 })
 
 const consistencyIssues = computed(() => review.value?.consistency?.issues ?? [])
+const consistencyRepairs = computed(() => review.value?.repairs ?? [])
 
 const teamSections = computed(() => {
   if (!review.value) return []
@@ -257,8 +258,14 @@ onUnmounted(() => {
                 <i :style="{ width: `${review.verdict.blueWinRate}%` }" />
               </div>
               <p>{{ review.verdict.summary }}</p>
+              <div v-if="consistencyRepairs.length" class="verdict-repair">
+                <header><Shield :size="15" />已按程序事实自动纠正 {{ consistencyRepairs.length }} 处</header>
+                <ul>
+                  <li v-for="(item, index) in consistencyRepairs" :key="index">{{ item }}</li>
+                </ul>
+              </div>
               <div v-if="consistencyIssues.length" class="verdict-conflict">
-                <header><AlertCircle :size="15" />与程序结论不一致 · 倾向仍是模型判断，未作修正</header>
+                <header><AlertCircle :size="15" />与程序结论仍有出入 · 以下为未自动纠正的软标记</header>
                 <ul>
                   <li v-for="(issue, index) in consistencyIssues" :key="index">{{ issue }}</li>
                 </ul>

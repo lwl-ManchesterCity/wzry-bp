@@ -1150,6 +1150,14 @@ h1, h2, h3, h4 { margin: 0; }
 .verdict-conflict ul { margin: 7px 0 0; padding-left: 16px; }
 .verdict-conflict li { color: var(--red-2); font-size: 11px; line-height: 1.75; }
 
+.verdict-repair {
+  margin-top: 12px; padding: 9px 12px; border-radius: var(--r-s);
+  border: 1px solid rgba(var(--green-rgb), .28); background: rgba(var(--green-rgb), .07);
+}
+.verdict-repair header { display: flex; align-items: center; gap: 6px; color: var(--green); font-size: 10.5px; font-weight: 600; }
+.verdict-repair ul { margin: 7px 0 0; padding-left: 16px; }
+.verdict-repair li { color: var(--text-2); font-size: 11px; line-height: 1.75; }
+
 .synergy-basis {
   margin-top: 12px; padding: 13px 15px 11px;
   border: 1px solid var(--line-2); border-radius: var(--r-m);

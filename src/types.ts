@@ -92,7 +92,9 @@ export interface DraftReview {
   synergyNotes: SynergyNote[]
   matchups: MatchupReview[]
   keyFactors: string[]
-  /** 模型的倾向是否违背程序算出的硬结论；只标记，不改百分比 */
+  /** 硬约束被模型违反时按程序事实自动纠正的记录 */
+  repairs?: string[]
+  /** 纠正后仍与程序结论有出入的软标记 */
   consistency?: { ok: boolean; issues: string[] }
 }
 

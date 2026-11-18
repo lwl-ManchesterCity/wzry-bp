@@ -7,8 +7,12 @@
  */
 
 import { DRAFT_STYLES, seededUnit } from '../shared/styles.mjs'
+import { solveLineup, LANE_LABEL } from '../shared/lanes.mjs'
 
 const LANES = ['对抗路', '打野', '中路', '发育路', '游走']
+const LANE_ID_BY_LABEL = Object.fromEntries(
+  Object.entries(LANE_LABEL).map(([id, label]) => [label, Number(id)]),
+)
 const COMBO_KIND_BY_STYLE = {
   engage: { engage: 10, protection: 3 },
   protect: { protection: 14, poke: 4 },
@@ -17,6 +21,13 @@ const COMBO_KIND_BY_STYLE = {
   counter: { engage: 3, protection: 3, pickoff: 3, push: 3 },
   meta: {},
 }
+
+// 剪枝锚点里「强协同潜力」的权重。完整评分每条强组合给 22 分，锚点若只给 deg×2
+// 会低估协同拼图，让高 deg 的后羿/伽罗被单卡强度高的英雄剪掉。实测 deg 权重 2/3 时
+// engage 不同种子互有约 9.74 的缺口，4 起所有思路×种子的窄/宽缺口都收敛到 ≤0，取 4。
+const COMBO_DEGREE_WEIGHT = 4
+// 多路英雄在「非主路」候选桶里的锚点折扣，防止副路桶被主路是别处的英雄挤满（见 buildLineups）
+const SUB_LANE_ANCHOR_FACTOR = 0.8
 
 const uniqueIds = (ids) => [...new Set((ids || []).map(Number).filter(Number.isFinite))]
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value))
@@ -36,15 +47,13 @@ export function createTeamPlanner({
   synergyEngine,
   synergy,
   macro,
-  laneOf,
   strengthScore,
   styleScore,
 }) {
   const nameOf = (id) => heroMap.get(Number(id))?.name || `英雄${id}`
 
   // 每个英雄参与的强组合数：剪枝初筛若只看单卡强度，会把大乔/鬼谷子这类
-  // 强度低但能促成多条强协同的拼图砍掉。权重 2 ≈ 强度IQR(12.3)/最大强组合数(6)，
-  // 让满协同英雄获得约一个强度IQR的加成，足以浮出强度底部，又不压倒真实强度差。
+  // 强度低但能促成多条强协同的拼图砍掉。乘以 COMBO_DEGREE_WEIGHT 计入锚点。
   const strongComboDegree = new Map()
   for (const combo of synergy?.combos || []) {
     if (combo.tier !== 'strong') continue
@@ -66,6 +75,23 @@ export function createTeamPlanner({
       for (const key of Object.keys(macros)) macros[key] += values[key]
     }
     return { analysis, structure: analysis.structure, macros }
+  }
+
+  /** 与排布面板同一套落位：主路优先、副路补空，整队求最优而不是各认主路 */
+  function lineupOf(ids) {
+    return solveLineup(ids.map((id) => heroMap.get(Number(id))).filter(Boolean))
+  }
+
+  function lanesOf(ids, lineup) {
+    const byHero = new Map()
+    for (const [lane, heroId] of Object.entries(lineup)) byHero.set(Number(heroId), Number(lane))
+    const lanes = ids.map((id) => LANE_LABEL[byHero.get(Number(id))]).filter(Boolean)
+    // 补位＝站了英雄表里没列出的路，和面板的「补位」标签同一口径
+    const offLane = ids.filter((id) => {
+      const listed = (heroMap.get(Number(id))?.laneIds || []).map(Number)
+      return !listed.includes(byHero.get(Number(id)))
+    }).length
+    return { lanes, offLane, byHero }
   }
 
   /** 对手已暴露的长处，只有放进整队评分，才不会被某个高分英雄盖掉 */
@@ -129,18 +155,17 @@ export function createTeamPlanner({
       notes.push(`成型组合：${analysis.combos.find((combo) => combo.tier === 'strong').name}`)
     }
 
-    const lanes = ids.map(laneOf).filter(Boolean)
-    const laneSet = new Set(lanes)
-    const duplicateLanes = lanes.length - laneSet.size
+    const lineup = lineupOf(ids)
+    const { lanes, offLane } = lanesOf(ids, lineup)
     if (final) {
-      const covered = LANES.every((lane) => laneSet.has(lane))
-      score += ids.length === 5 && covered ? 24 : -80 - duplicateLanes * 20
+      const covered = ids.length === 5 && offLane === 0
+      score += covered ? 24 : -80 - offLane * 20
       if (covered) notes.push('五路完整')
     } else {
-      score -= duplicateLanes * 48
+      score -= offLane * 48
       // 已选部分的结构只作轻量引导，真正的门槛在五人完整评分
       score += structure.front * 0.35 + structure.engageScore * 0.25 + structure.controlScore * 0.2
-      return { score, notes, metrics: { structure, macros, lanes } }
+      return { score, notes, metrics: { structure, macros, lanes, offLane, lineup } }
     }
 
     const frontTarget = { engage: 9, protect: 9, siege: 7, pickoff: 6, counter: 8, meta: 8 }[style?.key] ?? 8
@@ -219,7 +244,7 @@ export function createTeamPlanner({
     score += matchup.points * counterWeight
     if (matchup.note && matchup.points >= 6) notes.push(matchup.note)
 
-    return { score, notes: [...new Set(notes)], metrics: { structure, macros, lanes } }
+    return { score, notes: [...new Set(notes)], metrics: { structure, macros, lanes, offLane, lineup } }
   }
 
   /**
@@ -240,22 +265,28 @@ export function createTeamPlanner({
     const fixedSet = new Set(fixed)
     const pool = uniqueIds(available).filter((id) => !fixedSet.has(id) && heroMap.has(id))
     if (fixed.length + pool.length < 5) return []
-    const fixedLanes = fixed.map(laneOf).filter(Boolean)
-    // 人类可能选了同主路两人（手动排布前的常态）：不再直接放弃整队规划，
-    // 改为「能覆盖几路就覆盖几路」继续推演，避免 AI 退回纯个体评分。
-    const targetLanes = Math.min(5, new Set(fixedLanes).size + (5 - fixed.length))
-
     const byLane = new Map()
     for (const lane of LANES) {
-      const candidates = pool
-        .filter((id) => laneOf(id) === lane)
-        .map((id) => ({
-          id,
-          anchor: strengthScore(id).score * (style?.strength ?? 1)
-            + styleScore(style, id, 'pick').points * 0.6
-            + (strongComboDegree.get(id) || 0) * 2
-            + seededUnit(seed, 'anchor', style?.key, id) * 2,
-        }))
+      const laneId = LANE_ID_BY_LABEL[lane]
+      // 副路也是合法出场位：多路英雄在每一路都进候选桶，不再只认主路
+      let listed = pool.filter((id) => (heroMap.get(id)?.laneIds || []).map(Number).includes(laneId))
+      // 该路没有列出英雄可选时才允许补位，与面板「凑不满才用未列出的路」一致
+      if (!listed.length) listed = pool
+      const candidates = listed
+        .map((id) => {
+          const laneIds = (heroMap.get(id)?.laneIds || []).map(Number)
+          // 副路桶里给多路英雄打折：否则主路是别处的英雄带满锚点挤进副路桶，
+          // 把该路主路专家剪掉（实测打野桶 8 席曾被 6 个主路对抗路的英雄占满）。
+          // 0.8 取自实测：0.9 时专家仍被剪（engage gap 9.74），0.8 起专家存活（gap 0.13）
+          const subFactor = laneIds[0] === laneId ? 1 : SUB_LANE_ANCHOR_FACTOR
+          return {
+            id,
+            anchor: (strengthScore(id).score * (style?.strength ?? 1)
+              + styleScore(style, id, 'pick').points * 0.6
+              + (strongComboDegree.get(id) || 0) * COMBO_DEGREE_WEIGHT
+              + seededUnit(seed, 'anchor', style?.key, id) * 2) * subFactor,
+          }
+        })
         .sort((a, b) => b.anchor - a.anchor)
         .slice(0, perLane)
         .map((item) => item.id)
@@ -263,26 +294,29 @@ export function createTeamPlanner({
     }
 
     let states = [{ picks: fixed, search: scoreLineup(fixed, { style, oppPicks, final: false }).score }]
+    const shortlist = [...new Set(LANES.flatMap((lane) => byLane.get(lane) || []))]
     while (states.length && states[0].picks.length < 5) {
       const expanded = []
       const seen = new Set()
       for (const state of states) {
         const used = new Set(state.picks)
-        const taken = new Set(state.picks.map(laneOf))
-        for (const lane of LANES) {
-          if (taken.has(lane)) continue
-          for (const id of byLane.get(lane) || []) {
-            if (used.has(id)) continue
-            const picks = [...state.picks, id]
-            const key = [...picks].sort((a, b) => a - b).join('+')
-            if (seen.has(key)) continue
-            seen.add(key)
-            const evaluated = scoreLineup(picks, { style, oppPicks, final: false })
-            expanded.push({
-              picks,
-              search: evaluated.score + seededUnit(seed, 'beam', state.picks.length, id) * 0.35,
-            })
-          }
+        // 落位由整队求解：先算出当前部分阵容占掉哪些路，只扩展能填「空着的列出路」的英雄。
+        // 列出路全被占的英雄加进来必然补位（-48 罚分下进不了束），提前剪掉省去整队评分
+        const covered = new Set(Object.keys(lineupOf(state.picks)).map(Number))
+        const freeLanes = [1, 2, 3, 4, 5].filter((lane) => !covered.has(lane))
+        for (const id of shortlist) {
+          if (used.has(id)) continue
+          const listed = (heroMap.get(id)?.laneIds || []).map(Number)
+          if (!listed.some((lane) => freeLanes.includes(lane))) continue
+          const picks = [...state.picks, id]
+          const key = [...picks].sort((a, b) => a - b).join('+')
+          if (seen.has(key)) continue
+          seen.add(key)
+          const evaluated = scoreLineup(picks, { style, oppPicks, final: false })
+          expanded.push({
+            picks,
+            search: evaluated.score + seededUnit(seed, 'beam', state.picks.length, id) * 0.35,
+          })
         }
       }
       expanded.sort((a, b) => b.search - a.search)
@@ -301,7 +335,7 @@ export function createTeamPlanner({
           styleKey: style?.key,
         }
       })
-      .filter((plan) => plan.metrics && new Set(plan.metrics.lanes).size >= targetLanes)
+      .filter((plan) => plan.metrics)
       .sort((a, b) => b.score - a.score)
       .slice(0, keep)
   }
@@ -329,7 +363,19 @@ export function createTeamPlanner({
 
   /** 第一层生成完整阵容，第二层再把完整阵容价值映射回当前候选 */
   function planPicks({ baseScored, teamPicks, available, myPicks, oppPicks, style, seed }) {
-    const plans = buildLineups(teamPicks, available, { style, oppPicks, seed })
+    // 对手前期只露出几手，按残缺阵容评分会漏掉他后续的最佳应对：
+    // 复用 Ban 侧的补全机器，先推断对手体系补满五人，再拿那套阵容评估我方
+    const oppIds = uniqueIds(oppPicks)
+    let oppResponse = null
+    if (oppIds.length < 5) {
+      const opponentStyle = inferOpponentStyle(oppIds, seed)
+      oppResponse = buildLineups(oppIds, available, {
+        style: opponentStyle, oppPicks: teamPicks, seed, width: 12, perLane: 8, keep: 1,
+      })[0] || null
+    }
+    const plans = buildLineups(teamPicks, available, {
+      style, oppPicks: oppResponse ? oppResponse.picks : oppIds, seed,
+    })
     if (!plans.length) return baseScored
     const fixed = new Set(teamPicks.map(Number))
     const bestOverall = plans[0].score
@@ -349,7 +395,7 @@ export function createTeamPlanner({
         score: planScore,
         adjusted: planScore + item.adjusted * 0.2,
         reasons,
-        plan: best ? { ...best, support: matches.length } : null,
+        plan: best ? { ...best, support: matches.length, oppResponse } : null,
       }
     })
   }
@@ -372,9 +418,20 @@ export function createTeamPlanner({
       }
     }
 
-    const occupiedLanes = new Set(teamPicks.map(laneOf))
+    // 对手已选英雄锁定落位，候选只能填剩下的空路：满员路不会被同分 ties 让给候选。
+    // 这套落位对所有候选都一样，提到循环外只算一次
+    const incumbents = uniqueIds(teamPicks)
+    const incumbentLineup = lineupOf(incumbents)
+    const fixedByHero = {}
+    for (const [lane, heroId] of Object.entries(incumbentLineup)) fixedByHero[Number(heroId)] = Number(lane)
+    const incumbentHeroes = incumbents.map((id) => heroMap.get(Number(id))).filter(Boolean)
+
     return baseScored.map((item) => {
-      const laneBlocked = occupiedLanes.has(laneOf(item.id))
+      // 候选加进对手阵容后只能补位＝对方根本不缺他，禁了也拆不动
+      const roster = [...incumbentHeroes, heroMap.get(Number(item.id))].filter(Boolean)
+      const lineup = solveLineup(roster, fixedByHero)
+      const assignedLane = Number(Object.keys(lineup).find((lane) => Number(lineup[lane]) === item.id))
+      const laneBlocked = !(heroMap.get(item.id)?.laneIds || []).map(Number).includes(assignedLane)
       if (!shortlist.has(item.id)) {
         // 非短名单同样不吃满员路的个体兜底分，否则禁人又会溜回对方已满员的路
         const fallback = laneBlocked ? 0 : item.adjusted * 0.35

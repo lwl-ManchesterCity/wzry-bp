@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import path from 'node:path'
 import { createSynergyEngine } from '../server/synergy.mjs'
 import { createDraftAdvisor } from '../server/ai-draft.mjs'
+import { solveLineup, LANE_LABEL } from '../shared/lanes.mjs'
 import { DRAFT_STYLES } from '../shared/styles.mjs'
 import type { Hero } from '../src/types'
 
@@ -25,7 +26,9 @@ beforeAll(() => {
 function expectCompleteLineup(plan: any) {
   expect(plan.picks).toHaveLength(5)
   expect(new Set(plan.picks).size).toBe(5)
-  expect(new Set(plan.picks.map(advisor.laneOf)).size).toBe(5)
+  // 落位与排布面板同口径：按整队求解后的分路判齐全，而不是各认主路
+  expect(new Set(plan.metrics.lanes).size).toBe(5)
+  expect(plan.metrics.offLane).toBe(0)
   expect(Number.isFinite(plan.score)).toBe(true)
 }
 
@@ -80,17 +83,87 @@ describe('BO1 整队候选生成', () => {
     const engage = style('engage')
     const narrow = advisor.buildLineups!([], allIds, { style: engage, seed: 's3', perLane: 8 })[0]
     const wide = advisor.buildLineups!([], allIds, { style: engage, seed: 's3', perLane: 24 })[0]
-    // 修复前 narrow 比 wide 低约 22 分（大乔/鬼谷子等高协同英雄被单卡强度剪掉）；
-    // 修复后差距收敛到个位数。阈值 5 取自实测：修复前 22.3、修复后 1.9。
+    // 灵活分路后副路桶会被主路是别处的英雄挤占、协同拼图易被单卡强度剪掉：
+    // 未折扣时 narrow 比 wide 低 9.74（后羿/哪吒被剪）。副路锚点折扣 0.8＋协同权重 4 后，
+    // 各思路×种子的窄/宽缺口都收敛到 ≤0（本例约 -0.19）。阈值 5 留作回归余量。
     expect(wide.score - narrow.score).toBeLessThan(5)
+  })
+
+  it('多路英雄不再被压成主路：对抗路有人时芈月按打野评估与落位', () => {
+    const idOf = (name: string) => heroes.find((hero) => hero.name === name)!.id
+    const bai = idOf('白起')
+    const mi = idOf('芈月')
+    // 白起占对抗路，芈月（对抗/打野）评估时走副路打野，而不是被压回主路撞车
+    expect(advisor.evaluate!(mi, [bai], 'pick').lane).toBe('打野')
+    // 把两人一起固定进整队规划：芈月仍落打野、五路齐全，落位与面板共用求解一致
+    const plans = advisor.buildLineups!([bai, mi], allIds.filter((id) => id !== bai && id !== mi), {
+      style: style('meta'), seed: 'flex-lane',
+    })
+    const plan = plans[0]
+    expect(plan.picks).toContain(bai)
+    expect(plan.picks).toContain(mi)
+    expect(plan.metrics.lineup[2]).toBe(mi)
+    expect(plan.metrics.offLane).toBe(0)
+    expect(plan.metrics.lineup).toEqual(solveLineup(plan.picks.map((id) => heroMap.get(id))))
+  })
+
+  it('单路英雄撞路仍算补位：五路齐全奖励不再发给双射手阵容', () => {
+    const idOf = (name: string) => heroes.find((hero) => hero.name === name)!.id
+    const five = [idOf('鲁班七号'), idOf('孙尚香'), idOf('妲己'), idOf('白起'), idOf('庄周')]
+    const evaluated = advisor.scoreLineup!(five, { style: style('meta') })
+    expect(evaluated.metrics.offLane).toBe(1)
+    expect(evaluated.notes).not.toContain('五路完整')
   })
 })
 
 describe('完整阵容价值映射回当前一手', () => {
+  it('对手只露出两手时，先补全其最佳应对再给我方整套阵容评分', () => {
+    const oppTarget = advisor.buildLineups!([], allIds, { style: style('meta'), seed: 'opp-response' })[0]
+    const oppPicks = oppTarget.picks.slice(0, 2)
+    const ourTarget = advisor.buildLineups!(
+      [], allIds.filter((id) => !oppPicks.includes(id)), { style: style('engage'), seed: 'opp-response-ours' },
+    )[0]
+    const teamPicks = ourTarget.picks.slice(0, 2)
+    const available = allIds.filter((id) => ![...oppPicks, ...teamPicks].includes(id))
+    const ranked = advisor.rank({
+      teamPicks, available, myPicks: teamPicks, oppPicks,
+      limit: 5, mode: 'pick', style: style('engage'), seed: 'opp-response', step: 6,
+    })
+    const response = ranked[0].plan?.oppResponse
+    expect(response).toBeTruthy()
+    expectCompleteLineup(response)
+    for (const id of oppPicks) expect(response.picks).toContain(id)
+    // 方案分必须等于「对着补全后的对手」评出的分，而不是对着残缺两手
+    expect(ranked[0].plan.score).toBe(
+      advisor.scoreLineup!(ranked[0].plan.picks, { style: style('engage'), oppPicks: response.picks }).score,
+    )
+  })
+
+  it('对手五手已齐时不再推演，直接按其现有阵容评分', () => {
+    const oppPicks = advisor.buildLineups!([], allIds, { style: style('meta'), seed: 'opp-full' })[0].picks
+    const ourTarget = advisor.buildLineups!(
+      [], allIds.filter((id) => !oppPicks.includes(id)), { style: style('meta'), seed: 'opp-full-ours' },
+    )[0]
+    const teamPicks = ourTarget.picks.slice(0, 4)
+    const ranked = advisor.rank({
+      teamPicks,
+      available: allIds.filter((id) => ![...oppPicks, ...teamPicks].includes(id)),
+      myPicks: teamPicks, oppPicks,
+      limit: 5, mode: 'pick', style: style('meta'), seed: 'opp-full', step: 15,
+    })
+    expect(ranked[0].plan.oppResponse).toBeNull()
+    expect(ranked[0].plan.score).toBe(
+      advisor.scoreLineup!(ranked[0].plan.picks, { style: style('meta'), oppPicks }).score,
+    )
+  })
+
   it('第五手从完整方案中补齐最后一路，并保留前四个已选英雄', () => {
     const target = advisor.buildLineups!([], allIds, { style: style('meta'), seed: 'fifth-pick' })[0]
     const fixed = target.picks.slice(0, 4)
-    const missingLane = advisor.laneOf(target.picks[4])
+    // 灵活分路下「最后一路」＝前四手锁定落位后剩下的空路，而非第五手的主路
+    const incumbent = solveLineup(fixed.map((id) => heroMap.get(id)))
+    const takenLanes = new Set(Object.keys(incumbent).map(Number))
+    const missingLane = LANE_LABEL[[1, 2, 3, 4, 5].find((lane) => !takenLanes.has(lane))!]
     const ranked = advisor.rank({
       teamPicks: fixed,
       available: allIds.filter((id) => !fixed.includes(id)),
